@@ -265,8 +265,16 @@ const loginUser = async (req, res) => {
 
 const adminLogin = async (req, res) => {
   try {
+    console.log('=== ADMIN LOGIN ATTEMPT ===');
+    console.log('Request body:', req.body);
+    console.log('Request query:', req.query);
+    
     const providedEmail = (req.body?.email ?? req.query?.email ?? SUPERADMIN_EMAIL).trim().toLowerCase();
     const adminPassFromRequest = (req.body?.adminPass ?? req.query?.adminPass ?? req.body?.password ?? req.query?.password);
+
+    console.log('Provided email:', providedEmail);
+    console.log('Expected email:', SUPERADMIN_EMAIL);
+    console.log('Admin pass provided:', !!adminPassFromRequest);
 
     if (providedEmail !== SUPERADMIN_EMAIL) {
       return res.status(403).json({ message: 'Only superadmin account is allowed' });
@@ -278,30 +286,88 @@ const adminLogin = async (req, res) => {
       return res.status(403).json({ message: 'Invalid admin pass' });
     }
 
-    // Ensure superadmin role exists
-    let superadminRole = await Role.findOne({ name: 'superadmin' });
-    if (!superadminRole) {
-      superadminRole = await Role.create({
-        name: 'superadmin',
-        level: 1,
-        permissions: ['manage_project', 'view_team_dashboard', 'view_sales_data', 'edit_sales_data'],
+    console.log('Credentials validated, checking database connection...');
+    
+    // Check MongoDB connection status
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      console.error('MongoDB not connected. Ready state:', mongoose.connection.readyState);
+      return res.status(500).json({ 
+        message: 'Database connection not ready',
+        readyState: mongoose.connection.readyState
       });
     }
 
-    // Ensure user exists
-    let user = await User.findOne({ email: SUPERADMIN_EMAIL });
-    if (!user) {
-      user = new User({
-        name: 'Super Admin',
-        email: SUPERADMIN_EMAIL,
-        password: EXPECTED_ADMIN_PASS,
-        companyName: 'DeltaYards',
-        mobile: '',
-        role: 'superadmin',
-        roleRef: superadminRole._id,
-        level: superadminRole.level,
+    console.log('MongoDB connected, looking for superadmin role...');
+    
+    // Ensure superadmin role exists
+    let superadminRole;
+    try {
+      superadminRole = await Role.findOne({ name: 'superadmin' }).maxTimeMS(5000); // 5 second timeout
+      console.log('Superadmin role found:', !!superadminRole);
+    } catch (roleError) {
+      console.error('Error finding superadmin role:', roleError);
+      return res.status(500).json({ 
+        message: 'Database operation failed',
+        error: roleError.message 
       });
-      await user.save();
+    }
+    
+    if (!superadminRole) {
+      console.log('Creating superadmin role...');
+      try {
+        superadminRole = await Role.create({
+          name: 'superadmin',
+          level: 1,
+          permissions: ['manage_project', 'view_team_dashboard', 'view_sales_data', 'edit_sales_data'],
+        });
+        console.log('Superadmin role created successfully');
+      } catch (createRoleError) {
+        console.error('Error creating superadmin role:', createRoleError);
+        return res.status(500).json({ 
+          message: 'Failed to create superadmin role',
+          error: createRoleError.message 
+        });
+      }
+    }
+
+    console.log('Checking if superadmin user exists...');
+    
+    // Ensure user exists
+    let user;
+    try {
+      user = await User.findOne({ email: SUPERADMIN_EMAIL }).maxTimeMS(5000); // 5 second timeout
+      console.log('Superadmin user found:', !!user);
+    } catch (userFindError) {
+      console.error('Error finding superadmin user:', userFindError);
+      return res.status(500).json({ 
+        message: 'Failed to find superadmin user',
+        error: userFindError.message 
+      });
+    }
+    
+    if (!user) {
+      console.log('Creating superadmin user...');
+      try {
+        user = new User({
+          name: 'Super Admin',
+          email: SUPERADMIN_EMAIL,
+          password: EXPECTED_ADMIN_PASS,
+          companyName: 'DeltaYards',
+          mobile: '',
+          role: 'superadmin',
+          roleRef: superadminRole._id,
+          level: superadminRole.level,
+        });
+        await user.save();
+        console.log('Superadmin user created successfully');
+      } catch (createUserError) {
+        console.error('Error creating superadmin user:', createUserError);
+        return res.status(500).json({ 
+          message: 'Failed to create superadmin user',
+          error: createUserError.message 
+        });
+      }
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
