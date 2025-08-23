@@ -41,23 +41,59 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Database connection check middleware
+app.use((req, res, next) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ 
+      error: 'Service temporarily unavailable',
+      message: 'Database connection not ready. Please try again in a few seconds.',
+      timestamp: new Date().toISOString()
+    });
+  }
+  next();
+});
+
 // MongoDB connection string
 const MONGO_URI = 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 // Log MongoDB URI
 console.log('MONGO_URI:', MONGO_URI);
 
+// Global variable to track connection status
+let isMongoConnected = false;
+
 // Connect to MongoDB
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 10000, // 10 second timeout
+  socketTimeoutMS: 45000, // 45 second timeout
 })
-  .then(() => console.log('MongoDB connected successfully'))
+  .then(() => {
+    console.log('MongoDB connected successfully');
+    isMongoConnected = true;
+  })
   .catch((err) => {
     console.error('MongoDB connection error:', err.message);
     console.error('Full error:', JSON.stringify(err, null, 2));
     process.exit(1);
   });
+
+// Listen for connection events
+mongoose.connection.on('connected', () => {
+  console.log('Mongoose connected to MongoDB');
+  isMongoConnected = true;
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('Mongoose connection error:', err);
+  isMongoConnected = false;
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('Mongoose disconnected from MongoDB');
+  isMongoConnected = false;
+});
 
 // Routes
 // app.use('/api/users', userRoutes);
@@ -99,9 +135,10 @@ app.get('/api/health', async (req, res) => {
     res.json({
       status: 'ok',
       database: {
-        connected: connectionState === 1,
-        state: stateNames[connectionState] || 'unknown',
-        readyState: connectionState
+        connected: isMongoConnected,
+        mongooseState: stateNames[connectionState] || 'unknown',
+        readyState: connectionState,
+        globalStatus: isMongoConnected
       },
       timestamp: new Date().toISOString()
     });
