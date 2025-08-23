@@ -47,7 +47,8 @@ app.use((req, res, next) => {
     return res.status(503).json({ 
       error: 'Service temporarily unavailable',
       message: 'Database connection not ready. Please try again in a few seconds.',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      details: 'MongoDB connection is being established. This is normal during deployment startup.'
     });
   }
   next();
@@ -64,8 +65,11 @@ let isMongoConnected = false;
 
 // Connect to MongoDB
 mongoose.connect(MONGO_URI, {
-  serverSelectionTimeoutMS: 10000, // 10 second timeout
+  serverSelectionTimeoutMS: 30000, // 30 second timeout for deployment
   socketTimeoutMS: 45000, // 45 second timeout
+  maxPoolSize: 10, // Connection pool size
+  retryWrites: true,
+  w: 'majority'
 })
   .then(() => {
     console.log('MongoDB connected successfully');
@@ -74,7 +78,8 @@ mongoose.connect(MONGO_URI, {
   .catch((err) => {
     console.error('MongoDB connection error:', err.message);
     console.error('Full error:', JSON.stringify(err, null, 2));
-    process.exit(1);
+    // Don't exit process, let it retry
+    isMongoConnected = false;
   });
 
 // Listen for connection events
@@ -91,6 +96,18 @@ mongoose.connection.on('error', (err) => {
 mongoose.connection.on('disconnected', () => {
   console.log('Mongoose disconnected from MongoDB');
   isMongoConnected = false;
+  
+  // Retry connection after 5 seconds
+  setTimeout(() => {
+    console.log('Attempting to reconnect to MongoDB...');
+    mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      retryWrites: true,
+      w: 'majority'
+    });
+  }, 5000);
 });
 
 // Routes
@@ -162,6 +179,21 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start server
+// Start server with connection check
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Wait for MongoDB connection before starting server
+const startServer = () => {
+  if (isMongoConnected) {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log('MongoDB connection status:', isMongoConnected);
+    });
+  } else {
+    console.log('Waiting for MongoDB connection...');
+    setTimeout(startServer, 2000);
+  }
+};
+
+// Start server after 3 seconds to allow MongoDB connection
+setTimeout(startServer, 3000);
