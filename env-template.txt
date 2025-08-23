@@ -1,0 +1,19 @@
+# MongoDB Connection
+MONGO_URI=mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+
+# JWT Secret
+JWT_SECRET=your_jwt_secret_here
+
+# Server Configuration
+PORT=5000
+NODE_ENV=production
+
+# CORS Configuration
+CLIENT_ORIGIN=https://delta-frontend-5ej2q824y-deltas-projects-43e49e0e.vercel.app
+
+# Superadmin Configuration
+SUPERADMIN_EMAIL=superadmin@deltayards.com
+SUPERADMIN_ADMIN_PASS=123456
+
+# Vercel Configuration
+VERCEL_URL=https://delta-yards-crm-w11r.vercel.app
