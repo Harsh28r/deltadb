@@ -15,7 +15,7 @@ const app = express();
 // Middleware
 // CORS configuration - simplified
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://delta-frontend-5ej2q824y-deltas-projects-43e49e0e.vercel.app'],
+  origin: ['http://localhost:3000', 'https://delta-frontend-5ej2q824y-deltas-projects-43e49e0e.vercel.app','https://delta-frontend-gpd0ptb8z-deltas-projects-43e49e0e.vercel.app'],
   credentials: true,
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
