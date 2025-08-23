@@ -13,9 +13,23 @@ const cpSourceRoutes = require('./routes/cpSourceRoutes');
 const app = express();
 
 // Middleware
-// CORS configuration - simplified
+// CORS configuration - flexible for development and production
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://delta-frontend-5ej2q824y-deltas-projects-43e49e0e.vercel.app','https://delta-frontend-gpd0ptb8z-deltas-projects-43e49e0e.vercel.app'],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Allow localhost for development
+    if (origin === 'http://localhost:3000') return callback(null, true);
+    
+    // Allow any vercel.app domain
+    if (origin.includes('vercel.app')) return callback(null, true);
+    
+    // Allow all origins in development
+    if (process.env.NODE_ENV === 'development') return callback(null, true);
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
@@ -70,6 +84,13 @@ app.get('/api/test-cors', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err.message);
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ 
+      error: 'CORS error', 
+      message: 'Origin not allowed',
+      origin: req.headers.origin 
+    });
+  }
   res.status(500).json({ error: 'Internal server error' });
 });
 
