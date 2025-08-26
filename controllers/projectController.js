@@ -302,16 +302,6 @@ const checkProjectPermission = async (req, res) => {
   }
 };
 
-module.exports = {
-  createProject,
-  getProjects,
-  addMember,
-  bulkAddMembers,
-  removeMember,
-  bulkRemoveMembers,
-  checkProjectPermission,
-};
-
 // Create a new user (or use existing by email) and add to a project in one call
 const createUserAndAddToProject = async (req, res) => {
   const { projectId, name, email, password, mobile, companyName, updatePasswordIfExists, roleName } = req.body || {};
@@ -365,4 +355,352 @@ const createUserAndAddToProject = async (req, res) => {
   }
 };
 
-module.exports.createUserAndAddToProject = createUserAndAddToProject;
+// Dynamic role assignment within project based on user's role level
+const assignRoleInProject = async (req, res) => {
+  const { projectId, userId, newRoleName } = req.body || {};
+  try {
+    if (!projectId || !userId || !newRoleName) {
+      return res.status(400).json({ message: 'projectId, userId, and newRoleName are required' });
+    }
+
+    // Check if current user is authenticated and is a project member
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Check if current user is a project member
+    const isMember = project.members.some(id => String(id) === String(req.user._id));
+    const isOwner = String(project.owner) === String(req.user._id);
+    const isManager = project.managers.some(id => String(id) === String(req.user._id));
+
+    if (!isMember && !isOwner && !isManager) {
+      return res.status(403).json({ message: 'You must be a project member to assign roles' });
+    }
+
+    // Find the target user
+    const targetUser = await User.findById(userId);
+    if (!targetUser) return res.status(404).json({ message: 'Target user not found' });
+
+    // Check if target user is in the project
+    if (!project.members.some(id => String(id) === String(userId))) {
+      return res.status(400).json({ message: 'Target user is not a project member' });
+    }
+
+    // Find the new role
+    const newRole = await Role.findOne({ name: String(newRoleName).toLowerCase().trim() });
+    if (!newRole) return res.status(404).json({ message: 'Role not found' });
+
+    // Dynamic role assignment logic based on current user's role level
+    const currentUserLevel = req.user.level || 999;
+    const targetUserLevel = targetUser.level || 999;
+    const newRoleLevel = newRole.level || 999;
+
+    // Superadmin can assign any role
+    if (currentUserLevel === 1) {
+      // Allow assignment
+    }
+    // Project owner can assign roles at their level or lower
+    else if (isOwner) {
+      if (newRoleLevel < currentUserLevel) {
+        return res.status(403).json({ 
+          message: `As project owner (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+        });
+      }
+    }
+    // Managers can assign roles at their level or lower
+    else if (isManager) {
+      if (newRoleLevel < currentUserLevel) {
+        return res.status(403).json({ 
+          message: `As a project manager (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+        });
+      }
+    }
+    // Regular members can only assign roles at their level or lower
+    else {
+      if (newRoleLevel < currentUserLevel) {
+        return res.status(403).json({ 
+          message: `As a project member (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+        });
+      }
+    }
+
+    // Prevent assigning superadmin role to regular users
+    if (newRoleLevel === 1 && currentUserLevel !== 1) {
+      return res.status(403).json({ message: 'Only superadmin can assign superadmin role' });
+    }
+
+    // Update user's role
+    targetUser.role = newRole.name;
+    targetUser.roleRef = newRole._id;
+    targetUser.level = newRole.level;
+    await targetUser.save();
+
+    // Recompute project managers based on new role permissions
+    project.managers = await computeManagersArray(project);
+    await project.save();
+
+    // Return updated project
+    const populated = await Project.findById(project._id)
+      .populate('owner', 'name email role level mobile companyName')
+      .populate('members', 'name email role level mobile companyName')
+      .populate('managers', 'name email role level mobile companyName');
+    const rolePermsMap = await buildRolePermsMapForProjects(populated);
+
+    res.json({ 
+      message: `Role assigned successfully. ${targetUser.name} is now ${newRole.name}`,
+      user: { 
+        id: targetUser._id, 
+        name: targetUser.name, 
+        email: targetUser.email,
+        oldRole: targetUser.role,
+        newRole: newRole.name,
+        newLevel: newRole.level
+      },
+      project: shapeProject(populated, rolePermsMap),
+      roleAssignment: {
+        assignedBy: req.user.name,
+        assignedByRole: req.user.role,
+        assignedByLevel: req.user.level,
+        assignedTo: targetUser.name,
+        newRole: newRole.name,
+        newLevel: newRole.level
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get available roles that current user can assign in a project
+const getAssignableRolesInProject = async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    if (!projectId) {
+      return res.status(400).json({ message: 'projectId is required' });
+    }
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Check if current user is a project member
+    const isMember = project.members.some(id => String(id) === String(req.user._id));
+    const isOwner = String(project.owner) === String(req.user._id);
+    const isManager = project.managers.some(id => String(id) === String(req.user._id));
+
+    if (!isMember && !isOwner && !isManager) {
+      return res.status(403).json({ message: 'You must be a project member to view assignable roles' });
+    }
+
+    const currentUserLevel = req.user.level || 999;
+    let assignableRoles;
+
+    if (currentUserLevel === 1) {
+      // Superadmin can assign any role
+      assignableRoles = await Role.find().sort({ level: 1, name: 1 });
+    } else {
+      // Others can only assign roles at their level or lower
+      assignableRoles = await Role.find({ level: { $lte: currentUserLevel } }).sort({ level: 1, name: 1 });
+    }
+
+    res.json({
+      assignableRoles,
+      currentUser: {
+        name: req.user.name,
+        role: req.user.role,
+        level: req.user.level
+      },
+      project: {
+        id: project._id,
+        name: project.name
+      },
+      roleAssignmentRules: {
+        canAssignSuperadmin: currentUserLevel === 1,
+        maxAssignableLevel: currentUserLevel,
+        message: currentUserLevel === 1 
+          ? 'You can assign any role' 
+          : `You can assign roles at level ${currentUserLevel} or lower`
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Bulk role assignment within project - assign same role to multiple users
+const bulkAssignRoleInProject = async (req, res) => {
+  const { projectId, userIds, newRoleName } = req.body || {};
+  try {
+    if (!projectId || !userIds || !newRoleName) {
+      return res.status(400).json({ message: 'projectId, userIds, and newRoleName are required' });
+    }
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'userIds must be a non-empty array' });
+    }
+
+    // Check if current user is authenticated and is a project member
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    // Check if current user is a project member
+    const isMember = project.members.some(id => String(id) === String(req.user._id));
+    const isOwner = String(project.owner) === String(req.user._id);
+    const isManager = project.managers.some(id => String(id) === String(req.user._id));
+
+    if (!isMember && !isOwner && !isManager) {
+      return res.status(403).json({ message: 'You must be a project member to assign roles' });
+    }
+
+    // Find the new role
+    const newRole = await Role.findOne({ name: String(newRoleName).toLowerCase().trim() });
+    if (!newRole) return res.status(404).json({ message: 'Role not found' });
+
+    // Dynamic role assignment logic based on current user's role level
+    const currentUserLevel = req.user.level || 999;
+    const newRoleLevel = newRole.level || 999;
+
+    // Superadmin can assign any role
+    if (currentUserLevel === 1) {
+      // Allow assignment
+    }
+    // Project owner can assign roles at their level or lower
+    else if (isOwner) {
+      if (newRoleLevel < currentUserLevel) {
+        return res.status(403).json({ 
+          message: `As project owner (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+        });
+      }
+    }
+    // Managers can assign roles at their level or lower
+    else if (isManager) {
+      if (newRoleLevel < currentUserLevel) {
+        return res.status(403).json({ 
+          message: `As a project manager (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+        });
+      }
+    }
+    // Regular members can only assign roles at their level or lower
+    else {
+      if (newRoleLevel < currentUserLevel) {
+        return res.status(403).json({ 
+          message: `As a project member (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+        });
+      }
+    }
+
+    // Prevent assigning superadmin role to regular users
+    if (newRoleLevel === 1 && currentUserLevel !== 1) {
+      return res.status(403).json({ message: 'Only superadmin can assign superadmin role' });
+    }
+
+    // Process each user
+    const results = [];
+    const errors = [];
+    const updatedUsers = [];
+
+    for (const userId of userIds) {
+      try {
+        // Find the target user
+        const targetUser = await User.findById(userId);
+        if (!targetUser) {
+          errors.push({ userId, error: 'User not found' });
+          continue;
+        }
+
+        // Check if target user is in the project
+        if (!project.members.some(id => String(id) === String(userId))) {
+          errors.push({ userId, userName: targetUser.name, error: 'User is not a project member' });
+          continue;
+        }
+
+        // Store old role info
+        const oldRole = targetUser.role;
+        const oldLevel = targetUser.level;
+
+        // Update user's role
+        targetUser.role = newRole.name;
+        targetUser.roleRef = newRole._id;
+        targetUser.level = newRole.level;
+        await targetUser.save();
+
+        updatedUsers.push(targetUser._id);
+        results.push({
+          userId: targetUser._id,
+          userName: targetUser.name,
+          oldRole,
+          oldLevel,
+          newRole: newRole.name,
+          newLevel: newRole.level,
+          status: 'success'
+        });
+
+      } catch (userError) {
+        errors.push({ userId, error: userError.message });
+      }
+    }
+
+    // Only recompute project managers if we have successful updates
+    if (updatedUsers.length > 0) {
+      project.managers = await computeManagersArray(project);
+      await project.save();
+    }
+
+    // Return updated project
+    const populated = await Project.findById(project._id)
+      .populate('owner', 'name email role level mobile companyName')
+      .populate('members', 'name email role level mobile companyName')
+      .populate('managers', 'name email role level mobile companyName');
+    const rolePermsMap = await buildRolePermsMapForProjects(populated);
+
+    res.json({ 
+      message: `Bulk role assignment completed. ${results.length} users updated to ${newRole.name}`,
+      summary: {
+        totalRequested: userIds.length,
+        successful: results.length,
+        failed: errors.length,
+        newRole: newRole.name,
+        newLevel: newRole.level
+      },
+      results,
+      errors,
+      project: shapeProject(populated, rolePermsMap),
+      roleAssignment: {
+        assignedBy: req.user.name,
+        assignedByRole: req.user.role,
+        assignedByLevel: req.user.level,
+        newRole: newRole.name,
+        newLevel: newRole.level
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+module.exports = {
+  createProject,
+  getProjects,
+  addMember,
+  bulkAddMembers,
+  removeMember,
+  bulkRemoveMembers,
+  checkProjectPermission,
+  createUserAndAddToProject,
+  assignRoleInProject,
+  bulkAssignRoleInProject,
+  getAssignableRolesInProject,
+};
