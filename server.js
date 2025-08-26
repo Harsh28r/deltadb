@@ -25,6 +25,9 @@ app.use(cors({
     // Allow any vercel.app domain
     if (origin.includes('vercel.app')) return callback(null, true);
     
+    // Allow realtechmktg.com domain
+    if (origin === 'https://www.realtechmktg.com') return callback(null, true);
+    
     // Allow all origins in development
     if (process.env.NODE_ENV === 'development') return callback(null, true);
     
