@@ -12,6 +12,9 @@ const {
   bulkRemoveMembers,
   checkProjectPermission,
   createUserAndAddToProject,
+  assignRoleInProject,
+  bulkAssignRoleInProject,
+  getAssignableRolesInProject,
 } = require('../controllers/projectController');
 
 // Project creation requires authentication
@@ -39,6 +42,11 @@ router.post('/members/remove-bulk',  superadmin, authorize('manage_project'), bu
 
 // Create a user (by email if not exists) and add to a project in one call
 router.post('/members/create-and-add', auth, authorize('manage_project'), createUserAndAddToProject);
+
+// Dynamic role assignment within projects
+router.post('/members/assign-role', auth, assignRoleInProject);
+router.post('/members/bulk-assign-role', auth, bulkAssignRoleInProject);
+router.get('/:projectId/assignable-roles', auth, getAssignableRolesInProject);
 
 // Permission check endpoints (examples)
 router.get('/:projectId/can/view-team-dashboard', auth, authorize('view_team_dashboard'), checkProjectPermission);

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole } = require('../controllers/superadminController');
+const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory } = require('../controllers/superadminController');
 const superadmin = require('../middleware/superadmin');
 
 
@@ -26,6 +26,16 @@ router.post('/create-user', superadmin, createUserWithRole);
 // User management by role
 router.get('/users/role/:roleName', superadmin, getUsersByRole);
 router.get('/users/by-role', superadmin, getAllUsersGroupedByRole);
+
+// Individual user management
+router.get('/users/:userId', superadmin, getUserById);
+router.put('/users/:userId', superadmin, editUserWithRole);
+router.delete('/users/:userId', superadmin, deleteUserWithRole);
+
+// User history and project assignments
+router.get('/users/:userId/history', superadmin, getUserHistory);
+router.get('/users/:userId/timeline', superadmin, getUserTimeline);
+router.get('/users/history/all', superadmin, getAllUsersWithHistory);
 
 // Who am I
 router.get('/me', superadmin, currentUser);

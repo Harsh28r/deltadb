@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Role = require('../models/Role');
 const Project = require('../models/Project');
 const jwt = require('jsonwebtoken');
+const { getAvailableRolesForLevel } = require('../middleware/roleLevelAuth');
 
 // Superadmin-only login configuration
 const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'superadmin@deltayards.com').trim().toLowerCase();
@@ -426,16 +427,16 @@ const createRole = async (req, res) => {
 };
 
 const editRole = async (req, res) => {
-  const { id } = req.params;
+  const { roleName } = req.params;
   const { name, level, permissions } = req.body || {};
   
   try {
-    if (!id) return res.status(400).json({ message: 'Role ID is required' });
+    if (!roleName) return res.status(400).json({ message: 'Role ID is required' });
     if (!name && level === undefined && !permissions) {
       return res.status(400).json({ message: 'At least one field (name, level, or permissions) is required' });
     }
 
-    const role = await Role.findById(id);
+    const role = await Role.findById(roleName);
     if (!role) return res.status(404).json({ message: 'Role not found' });
 
     // Check if trying to edit superadmin role (level 1) - prevent downgrading
@@ -446,9 +447,9 @@ const editRole = async (req, res) => {
     // Update fields if provided
     if (name) {
       const normalized = String(name).toLowerCase().trim();
-      // Check if new name conflicts with existing role (excluding current role)
-      const existingRole = await Role.findOne({ name: normalized, _id: { $ne: id } });
-      if (existingRole) return res.status(400).json({ message: 'Role name already exists' });
+          // Check if new name conflicts with existing role (excluding current role)
+    const existingRole = await Role.findOne({ name: normalized, _id: { $ne: roleName } });
+    if (existingRole) return res.status(400).json({ message: 'Role name already exists' });
       role.name = normalized;
     }
     
@@ -469,12 +470,12 @@ const editRole = async (req, res) => {
 };
 
 const deleteRole = async (req, res) => {
-  const { id } = req.params;
+  const { roleName } = req.params;
   
   try {
-    if (!id) return res.status(400).json({ message: 'Role ID is required' });
+    if (!roleName) return res.status(400).json({ message: 'Role ID is required' });
 
-    const role = await Role.findById(id);
+    const role = await Role.findById(roleName);
     if (!role) return res.status(404).json({ message: 'Role not found' });
 
     // Prevent deletion of superadmin role (level 1)
@@ -483,14 +484,14 @@ const deleteRole = async (req, res) => {
     }
 
     // Check if any users are using this role
-    const usersWithRole = await User.countDocuments({ roleRef: id });
+    const usersWithRole = await User.countDocuments({ roleRef: roleName });
     if (usersWithRole > 0) {
       return res.status(400).json({ 
         message: `Cannot delete role. ${usersWithRole} user(s) are currently using this role.` 
       });
     }
 
-    await Role.findByIdAndDelete(id);
+    await Role.findByIdAndDelete(roleName);
     res.json({ message: 'Role deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Server error' });
@@ -610,6 +611,539 @@ const getAllUsersGroupedByRole = async (req, res) => {
   }
 };
 
+// Edit user with role
+const editUserWithRole = async (req, res) => {
+  const { userId } = req.params;
+  const { name, email, mobile, companyName, roleName } = req.body || {};
+  
+  try {
+    if (!userId) return res.status(400).json({ message: 'User ID is required' });
+    if (!name && !email && !mobile && !companyName && !roleName) {
+      return res.status(400).json({ message: 'At least one field is required for update' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Prevent editing superadmin user
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot edit superadmin user' });
+    }
+
+    // Update fields if provided
+    if (name) user.name = name;
+    if (mobile) user.mobile = mobile;
+    if (companyName) user.companyName = companyName;
+    
+    // Handle email update with duplicate check
+    if (email) {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      if (normalizedEmail !== user.email) {
+        const existingUser = await User.findOne({ email: normalizedEmail });
+        if (existingUser) {
+          return res.status(400).json({ message: 'Email already exists' });
+        }
+        user.email = normalizedEmail;
+      }
+    }
+
+    // Handle role update
+    if (roleName) {
+      const newRole = await Role.findOne({ name: String(roleName).toLowerCase().trim() });
+      if (!newRole) {
+        return res.status(404).json({ message: 'Role not found' });
+      }
+      
+      // Prevent downgrading to superadmin level
+      if (newRole.level === 1) {
+        return res.status(403).json({ message: 'Cannot assign superadmin role to regular users' });
+      }
+      
+      user.role = newRole.name;
+      user.roleRef = newRole._id;
+      user.level = newRole.level;
+    }
+
+    await user.save();
+    
+    res.json({ 
+      message: 'User updated successfully', 
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email, 
+        mobile: user.mobile, 
+        companyName: user.companyName, 
+        role: user.role, 
+        level: user.level 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Delete user with role
+const deleteUserWithRole = async (req, res) => {
+  const { userId } = req.params;
+  
+  try {
+    if (!userId) return res.status(400).json({ message: 'User ID is required' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Prevent deletion of superadmin user
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot delete superadmin user' });
+    }
+
+    // Check if user is part of any projects
+    const userProjects = await Project.find({ members: userId });
+    if (userProjects.length > 0) {
+      return res.status(400).json({ 
+        message: `Cannot delete user. User is a member of ${userProjects.length} project(s).` 
+      });
+    }
+
+    await User.findByIdAndDelete(userId);
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get single user by ID
+const getUserById = async (req, res) => {
+  const { userId } = req.params;
+  
+  try {
+    if (!userId) return res.status(400).json({ message: 'User ID is required' });
+
+    const user = await User.findById(userId).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Get role details
+    const role = await Role.findById(user.roleRef);
+    
+    res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        companyName: user.companyName,
+        role: user.role,
+        level: user.level,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      },
+      role: role ? {
+        name: role.name,
+        level: role.level,
+        permissions: role.permissions
+      } : null
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get comprehensive user history and project assignments
+const getUserHistory = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    // Find the target user
+    const targetUser = await User.findById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Get user's current role details
+    const currentRole = await Role.findById(targetUser.roleRef);
+    
+    // Find all projects where user is a member, owner, or manager
+    const projects = await Project.find({
+      $or: [
+        { members: userId },
+        { owner: userId },
+        { managers: userId }
+      ]
+    }).populate('owner', 'name email role level')
+      .populate('members', 'name email role level')
+      .populate('managers', 'name email role level');
+
+    // Categorize projects by user's role
+    const projectHistory = projects.map(project => {
+      const isOwner = String(project.owner._id) === String(userId);
+      const isManager = project.managers.some(m => String(m._id) === String(userId));
+      const isMember = project.members.some(m => String(m._id) === String(userId));
+      
+      let roleInProject = 'member';
+      if (isOwner) roleInProject = 'owner';
+      else if (isManager) roleInProject = 'manager';
+
+      return {
+        projectId: project._id,
+        projectName: project.name,
+        location: project.location,
+        developBy: project.developBy,
+        roleInProject,
+        joinedAt: project.createdAt,
+        projectStatus: 'active',
+        projectDetails: {
+          totalMembers: project.members.length,
+          totalManagers: project.managers.length,
+          owner: {
+            name: project.owner?.name,
+            email: project.owner?.email,
+            role: project.owner?.role,
+            level: project.owner?.level
+          }
+        }
+      };
+    });
+
+    // Get role change history (if you want to track this in the future)
+    const roleHistory = [
+      {
+        role: targetUser.role,
+        level: targetUser.level,
+        assignedAt: targetUser.createdAt,
+        assignedBy: 'system', // You can enhance this to track who assigned the role
+        current: true
+      }
+    ];
+
+    // Get user activity summary
+    const activitySummary = {
+      totalProjects: projects.length,
+      ownedProjects: projects.filter(p => String(p.owner._id) === String(userId)).length,
+      managedProjects: projects.filter(p => 
+        p.managers.some(m => String(m._id) === String(userId)) && 
+        String(p.owner._id) !== String(userId)
+      ).length,
+      memberProjects: projects.filter(p => 
+        p.members.some(m => String(m._id) === String(userId)) && 
+        !p.managers.some(m => String(m._id) === String(userId)) &&
+        String(p.owner._id) !== String(userId)
+      ).length,
+      firstProject: projects.length > 0 ? Math.min(...projects.map(p => p.createdAt)) : null,
+      lastActivity: projects.length > 0 ? Math.max(...projects.map(p => p.createdAt)) : null
+    };
+
+    // Get user permissions based on current role
+    const userPermissions = currentRole ? currentRole.permissions : [];
+
+    res.json({
+      user: {
+        _id: targetUser._id,
+        name: targetUser.name,
+        email: targetUser.email,
+        mobile: targetUser.mobile,
+        companyName: targetUser.companyName,
+        currentRole: {
+          name: targetUser.role,
+          level: targetUser.level,
+          permissions: userPermissions,
+          roleId: targetUser.roleRef
+        },
+        accountCreated: targetUser.createdAt,
+        accountStatus: 'active'
+      },
+      projectHistory,
+      roleHistory,
+      activitySummary,
+      permissions: {
+        current: userPermissions,
+        description: `User has ${userPermissions.length} permissions based on ${targetUser.role} role (level ${targetUser.level})`
+      },
+      summary: {
+        totalProjects: activitySummary.totalProjects,
+        currentRole: targetUser.role,
+        roleLevel: targetUser.level,
+        memberSince: targetUser.createdAt,
+        lastUpdated: new Date()
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get user timeline - Amazon-style activity tracking
+const getUserTimeline = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    // Find the target user
+    const targetUser = await User.findById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Get user's current role details
+    const currentRole = await Role.findById(targetUser.roleRef);
+    
+    // Find all projects where user is a member, owner, or manager
+    const projects = await Project.find({
+      $or: [
+        { members: userId },
+        { owner: userId },
+        { managers: userId }
+      ]
+    }).populate('owner', 'name email role level')
+      .populate('members', 'name email role level')
+      .populate('managers', 'name email role level')
+      .sort({ createdAt: 1 }); // Sort by creation date
+
+    // Build timeline events
+    const timelineEvents = [];
+
+    // 1. Account Creation Event
+    timelineEvents.push({
+      id: 'account-creation',
+      type: 'account_created',
+      title: 'Account Created',
+      description: `${targetUser.name} joined DeltaYards CRM`,
+      status: 'completed',
+      timestamp: targetUser.createdAt,
+      details: {
+        email: targetUser.email,
+        mobile: targetUser.mobile,
+        companyName: targetUser.companyName,
+        initialRole: targetUser.role,
+        initialLevel: targetUser.level
+      },
+      icon: '👤',
+      color: 'green'
+    });
+
+    // 2. Role Assignment Event
+    if (currentRole) {
+      timelineEvents.push({
+        id: 'role-assignment',
+        type: 'role_assigned',
+        title: 'Role Assigned',
+        description: `Assigned ${currentRole.name} role (Level ${currentRole.level})`,
+        status: 'completed',
+        timestamp: targetUser.createdAt,
+        details: {
+          roleName: currentRole.name,
+          roleLevel: currentRole.level,
+          permissions: currentRole.permissions,
+          assignedBy: 'System',
+          roleId: currentRole._id
+        },
+        icon: '🎭',
+        color: 'blue'
+      });
+    }
+
+    // 3. Project Assignment Events
+    projects.forEach((project, index) => {
+      const isOwner = String(project.owner._id) === String(userId);
+      const isManager = project.managers.some(m => String(m._id) === String(userId));
+      
+      let roleInProject = 'member';
+      let eventTitle = 'Added to Project';
+      let eventDescription = `Joined ${project.name} as team member`;
+      let eventIcon = '➕';
+      let eventColor = 'purple';
+
+      if (isOwner) {
+        roleInProject = 'owner';
+        eventTitle = 'Project Created';
+        eventDescription = `Created and owns ${project.name} project`;
+        eventIcon = '🚀';
+        eventColor = 'orange';
+      } else if (isManager) {
+        roleInProject = 'manager';
+        eventTitle = 'Promoted to Manager';
+        eventDescription = `Promoted to manager in ${project.name}`;
+        eventIcon = '⭐';
+        eventColor = 'gold';
+      }
+
+      timelineEvents.push({
+        id: `project-${project._id}`,
+        type: 'project_assignment',
+        title: eventTitle,
+        description: eventDescription,
+        status: 'completed',
+        timestamp: project.createdAt,
+        details: {
+          projectId: project._id,
+          projectName: project.name,
+          location: project.location,
+          developBy: project.developBy,
+          roleInProject,
+          projectStatus: 'active',
+          teamSize: project.members.length,
+          managersCount: project.managers.length
+        },
+        icon: eventIcon,
+        color: eventColor
+      });
+    });
+
+    // 4. Current Status Event
+    const currentPermissions = currentRole ? currentRole.permissions : [];
+    timelineEvents.push({
+      id: 'current-status',
+      type: 'current_status',
+      title: 'Current Status',
+      description: `Currently active with ${currentPermissions.length} permissions`,
+      status: 'active',
+      timestamp: new Date(),
+      details: {
+        currentRole: targetUser.role,
+        currentLevel: targetUser.level,
+        totalProjects: projects.length,
+        activeProjects: projects.length,
+        permissions: currentPermissions,
+        lastActivity: projects.length > 0 ? Math.max(...projects.map(p => p.createdAt)) : targetUser.createdAt
+      },
+      icon: '✅',
+      color: 'green'
+    });
+
+    // Sort timeline by timestamp
+    timelineEvents.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // Calculate timeline statistics
+    const timelineStats = {
+      totalEvents: timelineEvents.length,
+      accountAge: Math.floor((new Date() - new Date(targetUser.createdAt)) / (1000 * 60 * 60 * 24)), // days
+      totalProjects: projects.length,
+      currentRole: targetUser.role,
+      currentLevel: targetUser.level,
+      permissionsCount: currentPermissions.length
+    };
+
+    res.json({
+      user: {
+        _id: targetUser._id,
+        name: targetUser.name,
+        email: targetUser.email,
+        mobile: targetUser.mobile,
+        companyName: targetUser.companyName
+      },
+      timeline: {
+        events: timelineEvents,
+        stats: timelineStats,
+        summary: {
+          journey: `${targetUser.name}'s journey from ${new Date(targetUser.createdAt).toLocaleDateString()} to present`,
+          totalMilestones: timelineEvents.length,
+          currentStatus: `Active ${targetUser.role} with ${projects.length} project(s)`
+        }
+      },
+      currentRole: {
+        name: targetUser.role,
+        level: targetUser.level,
+        permissions: currentPermissions,
+        roleId: targetUser.roleRef
+      },
+      projectSummary: {
+        total: projects.length,
+        owned: projects.filter(p => String(p.owner._id) === String(userId)).length,
+        managed: projects.filter(p => 
+          p.managers.some(m => String(m._id) === String(userId)) && 
+          String(p.owner._id) !== String(userId)
+        ).length,
+        member: projects.filter(p => 
+          p.members.some(m => String(m._id) === String(userId)) && 
+          !p.managers.some(m => String(m._id) === String(userId)) &&
+          String(p.owner._id) !== String(userId)
+        ).length
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get all users with their project history summary
+const getAllUsersWithHistory = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const users = await User.find().select('-password');
+    const usersWithHistory = [];
+
+    for (const user of users) {
+      // Get user's projects
+      const projects = await Project.find({
+        $or: [
+          { members: user._id },
+          { owner: user._id },
+          { managers: user._id }
+        ]
+      });
+
+      // Get user's role
+      const role = await Role.findById(user.roleRef);
+
+      const userHistory = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        companyName: user.companyName,
+        currentRole: {
+          name: user.role,
+          level: user.level,
+          permissions: role ? role.permissions : []
+        },
+        projectSummary: {
+          totalProjects: projects.length,
+          ownedProjects: projects.filter(p => String(p.owner) === String(user._id)).length,
+          managedProjects: projects.filter(p => 
+            p.managers.some(m => String(m) === String(user._id)) && 
+            String(p.owner) !== String(user._id)
+          ).length,
+          memberProjects: projects.filter(p => 
+            p.members.some(m => String(m) === String(user._id)) && 
+            !p.managers.some(m => String(m) === String(user._id)) &&
+            String(p.owner) !== String(user._id)
+          ).length
+        },
+        accountCreated: user.createdAt,
+        lastActivity: projects.length > 0 ? Math.max(...projects.map(p => p.createdAt)) : user.createdAt
+      };
+
+      usersWithHistory.push(userHistory);
+    }
+
+    // Sort by most recent activity
+    usersWithHistory.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+
+    res.json({
+      totalUsers: usersWithHistory.length,
+      users: usersWithHistory,
+      summary: {
+        totalProjects: usersWithHistory.reduce((sum, u) => sum + u.projectSummary.totalProjects, 0),
+        activeUsers: usersWithHistory.filter(u => u.projectSummary.totalProjects > 0).length,
+        inactiveUsers: usersWithHistory.filter(u => u.projectSummary.totalProjects === 0).length
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -621,8 +1155,14 @@ module.exports = {
   deleteRole,
   listRoles,
   createUserWithRole,
+  editUserWithRole,
+  deleteUserWithRole,
+  getUserById,
   adminLogin,
   currentUser,
   getUsersByRole,
   getAllUsersGroupedByRole,
+  getUserHistory,
+  getUserTimeline,
+  getAllUsersWithHistory,
 };
