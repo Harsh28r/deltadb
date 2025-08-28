@@ -1,269 +1,327 @@
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Role = require('../models/Role');
-const Project = require('../models/Project');
-const jwt = require('jsonwebtoken');
 const { getAvailableRolesForLevel } = require('../middleware/roleLevelAuth');
 
-// Superadmin-only login configuration
-const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'superadmin@deltayards.com').trim().toLowerCase();
-const EXPECTED_ADMIN_PASS = String(process.env.SUPERADMIN_ADMIN_PASS || '123456');
+// Environment variables
+const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || 'superadmin@deltayards.com';
+const EXPECTED_ADMIN_PASS = process.env.SUPERADMIN_PASSWORD || '123456';
 
+// Helper function to set JWT token headers
 const setTokenHeaders = (res, token) => {
-  res.set('Authorization', `Bearer ${token}`);
-  res.set('x-auth-token', token);
-  res.set('Access-Control-Expose-Headers', 'Authorization, x-auth-token');
-  res.cookie('auth_token', token, {
-    httpOnly: false,         // set true if you don't want JS to read it
-    sameSite: 'lax',
-    secure: false,           // set true on HTTPS in production
-    maxAge: 60 * 60 * 1000,  // 1 hour
-  });
+  res.header('Authorization', `Bearer ${token}`);
+  res.header('x-auth-token', token);
+  res.header('Access-Control-Expose-Headers', 'Authorization, x-auth-token');
 };
 
+// Register a new user
 const registerUser = async (req, res) => {
-  const { name, email, password, mobile, companyName } = req.body || {};
-  try {
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
-    }
-    let user = await User.findOne({ email: String(email).trim().toLowerCase() });
-    if (user) return res.status(400).json({ message: 'User already exists' });
+  const { name, email, password, mobile, companyName } = req.body;
 
-    // Ensure default roles exist
+  try {
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create new user with default role
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      mobile,
+      companyName,
+      role: 'user',
+      level: 3
+    });
+
+    await user.save();
+
+    // Generate JWT token
+    const payload = {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      level: user.level
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+    setTokenHeaders(res, token);
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        mobile: user.mobile,
+        companyName: user.companyName
+      },
+      token
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Server error during registration' });
+  }
+};
+
+// Register a new manager
+const registerManager = async (req, res) => {
+  const { name, email, password, mobile, companyName } = req.body;
+
+  try {
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create new manager
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      mobile,
+      companyName,
+      role: 'manager',
+      level: 2
+    });
+
+    await user.save();
+
+    // Generate JWT token
+    const payload = {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      level: user.level
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+    setTokenHeaders(res, token);
+
+    res.status(201).json({
+      message: 'Manager registered successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        mobile: user.mobile,
+        companyName: user.companyName
+      },
+      token
+    });
+
+  } catch (error) {
+    console.error('Manager registration error:', error);
+    res.status(500).json({ message: 'Server error during manager registration' });
+  }
+};
+
+// Register a new sales person
+const registerSales = async (req, res) => {
+  const { name, email, password, mobile, companyName } = req.body;
+
+  try {
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create new sales person
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      mobile,
+      companyName,
+      role: 'sales',
+      level: 4
+    });
+
+    await user.save();
+
+    // Generate JWT token
+    const payload = {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      level: user.level
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+    setTokenHeaders(res, token);
+
+    res.status(201).json({
+      message: 'Sales person registered successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        mobile: user.mobile,
+        companyName: user.companyName
+      },
+      token
+    });
+
+  } catch (error) {
+    console.error('Sales registration error:', error);
+    res.status(500).json({ message: 'Server error during sales registration' });
+  }
+};
+
+// Initialize superadmin (first-time setup)
+const initSuperadmin = async (req, res) => {
+  try {
+    // Check if superadmin already exists
+    const existingSuperadmin = await User.findOne({ role: 'superadmin' });
+    if (existingSuperadmin) {
+      return res.status(400).json({ message: 'Superadmin already exists' });
+    }
+
+    // Create superadmin role if it doesn't exist
     let superadminRole = await Role.findOne({ name: 'superadmin' });
     if (!superadminRole) {
       superadminRole = await Role.create({
         name: 'superadmin',
         level: 1,
-        permissions: ['manage_project', 'view_team_dashboard', 'view_sales_data', 'edit_sales_data'],
+        permissions: [
+          "role:manage",
+          "projects:manage",
+          "notifications:read",
+          "notifications:update",
+          "leads:create",
+          "leads:read",
+          "leads:update",
+          "leads:bulk",
+          "leads:transfer",
+          "leadsSource:create",
+          "leadssource:read_all",
+          "leadssource:read",
+          "leadssource:update",
+          "leadssource:delete",
+          "leadsStatus:create",
+          "leadsstatus:read_all",
+          "leadsstatus:read",
+          "leadsstatus:update",
+          "leadsstatus:delete",
+          "user-projects:assign",
+          "user-projects:read",
+          "user-projects:remove",
+          "user-projects:bulk-update",
+          "user-projects:bulk-delete",
+          "reporting:read",
+          "notifications:bulk-update",
+          "notifications:bulk-delete"
+        ],
       });
     }
 
-    user = new User({
-      name,
-      email: String(email).trim().toLowerCase(),
-      password,
-      mobile,
-      companyName,
+    // Create superadmin user
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(EXPECTED_ADMIN_PASS, salt);
+
+    const superadmin = new User({
+      name: 'Super Admin',
+      email: SUPERADMIN_EMAIL,
+      password: hashedPassword,
+      companyName: 'DeltaYards',
+      mobile: '',
       role: 'superadmin',
       roleRef: superadminRole._id,
       level: superadminRole.level,
     });
-    await user.save();
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    setTokenHeaders(res, token);
+    await superadmin.save();
+
     res.status(201).json({
-      token,
-      user: { id: user._id, name, email, mobile, companyName, role: user.role },
+      message: 'Superadmin initialized successfully',
+      user: {
+        id: superadmin._id,
+        name: superadmin.name,
+        email: superadmin.email,
+        role: superadmin.role,
+        level: superadmin.level
+      }
     });
+
   } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    console.error('Superadmin initialization error:', error);
+    res.status(500).json({ message: 'Server error during superadmin initialization' });
   }
 };
 
-const registerManager = async (req, res) => {
-  const { name, email, password, mobile, companyName } = req.body || {};
-  try {
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
-    }
-
-    let user = await User.findOne({ email: String(email).trim().toLowerCase() });
-    if (user) return res.status(400).json({ message: 'User already exists' });
-
-    let role = await Role.findOne({ name: 'manager' });
-    if (!role) {
-      role = await Role.create({
-        name: 'manager',
-        level: 2,
-        permissions: ['manage_project', 'view_team_dashboard', 'view_sales_data'],
-      });
-    }
-
-    user = new User({
-      name,
-      email: String(email).trim().toLowerCase(),
-      password,
-      mobile,
-      companyName,
-      role: 'manager',
-      roleRef: role._id,
-      level: role.level,
-    });
-    await user.save();
-
-    res.status(201).json({ user: { id: user._id, name, email, mobile, companyName, role: user.role } });
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
-  }
-};
-
-const registerSales = async (req, res) => {
-  const { name, email, password, mobile, companyName } = req.body || {};
-  try {
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
-    }
-
-    let user = await User.findOne({ email: String(email).trim().toLowerCase() });
-    if (user) return res.status(400).json({ message: 'User already exists' });
-
-    let role = await Role.findOne({ name: 'sales' });
-    if (!role) {
-      role = await Role.create({ name: 'sales', level: 3, permissions: ['view_sales_data'] });
-    }
-
-    user = new User({
-      name,
-      email: String(email).trim().toLowerCase(),
-      password,
-      mobile,
-      companyName,
-      role: 'sales',
-      roleRef: role._id,
-      level: role.level,
-    });
-    await user.save();
-
-    res.status(201).json({ user: { id: user._id, name, email, mobile, companyName, role: user.role } });
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
-  }
-};
-
-const initSuperadmin = async (req, res) => {
-  const { name, email, mobile, companyName, password } = req.body || {};
-  try {
-    const existingSuperadmins = await User.countDocuments({ role: 'superadmin' });
-    if (existingSuperadmins > 0) {
-      return res.status(403).json({ message: 'Superadmin already initialized' });
-    }
-
-    if (!name || !email || !mobile || !companyName || !password) {
-      return res.status(400).json({ message: 'All fields are required for superadmin' });
-    }
-
-    let user = await User.findOne({ email: String(email).trim().toLowerCase() });
-    if (user) return res.status(400).json({ message: 'User already exists' });
-
-    let role = await Role.findOne({ name: 'superadmin' });
-    if (!role) role = await Role.create({ name: 'superadmin', level: 1 });
-
-    user = new User({
-      name,
-      email: String(email).trim().toLowerCase(),
-      mobile,
-      companyName,
-      password,
-      role: 'superadmin',
-      roleRef: role._id,
-      level: role.level,
-    });
-    await user.save();
-
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    setTokenHeaders(res, token);
-    res.status(201).json({
-      token,
-      user: { id: user._id, name, email, mobile, companyName, role: user.role },
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
-  }
-};
-
+// Login user
 const loginUser = async (req, res) => {
-  const email = (req.body?.email ?? req.query?.email);
-  const password = (req.body?.password ?? req.query?.password);
-  const projectId = (req.body?.projectId ?? req.query?.projectId);
+  const { email, password } = req.body;
+
   try {
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
-    }
-    const normalizedEmail = String(email).trim().toLowerCase();
-    if (normalizedEmail !== SUPERADMIN_EMAIL) {
-      return res.status(403).json({ message: 'Only superadmin login is allowed' });
-    }
-    if (String(password) !== EXPECTED_ADMIN_PASS) {
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Ensure superadmin role exists
-    let superadminRole = await Role.findOne({ name: 'superadmin' });
-    if (!superadminRole) {
-      superadminRole = await Role.create({
-        name: 'superadmin',
-        level: 1,
-        permissions: ['manage_project', 'view_team_dashboard', 'view_sales_data', 'edit_sales_data'],
-      });
+    // Check password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Ensure the single superadmin user exists
-    let user = await User.findOne({ email: SUPERADMIN_EMAIL });
-    if (!user) {
-      user = new User({
-        name: 'Super Admin',
-        email: SUPERADMIN_EMAIL,
-        password: EXPECTED_ADMIN_PASS,
-        companyName: 'DeltaYards',
-        role: 'superadmin',
-        roleRef: superadminRole._id,
-        level: superadminRole.level,
-      });
-      await user.save();
-    }
+    // Generate JWT token
+    const payload = {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      level: user.level
+    };
 
-    // Optional memberships
-    let projectMemberships = [];
-    let activeProject = null;
-    const userRoleName = 'superadmin';
-    const globalPermissions = (superadminRole?.permissions || []).map((p) => String(p).toLowerCase());
-
-    if (projectId) {
-      const project = await Project.findById(projectId).select('name members');
-      if (project && (project.members || []).map(String).includes(String(user._id))) {
-        activeProject = {
-          projectId: String(project._id),
-          projectName: project.name,
-          roleName: userRoleName,
-          permissions: globalPermissions,
-        };
-      }
-    } else {
-      const projects = await Project.find({ members: user._id })
-        .select('name members')
-        .populate('members', 'name email role');
-      projectMemberships = projects.map((p) => ({
-        projectId: String(p._id),
-        projectName: p.name,
-        roleName: userRoleName,
-        permissions: globalPermissions,
-        members: (p.members || []).map((m) => ({ id: m._id, name: m.name, email: m.email, role: m.role })),
-      }));
-    }
-
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
     setTokenHeaders(res, token);
-    return res.json({
-      token,
+
+    res.json({
+      message: 'Login successful',
       user: {
         id: user._id,
         name: user.name,
-        email: SUPERADMIN_EMAIL,
-        mobile: user.mobile,
-        companyName: user.companyName,
+        email: user.email,
         role: user.role,
-        projectMemberships,
-        activeProject,
+        level: user.level,
+        mobile: user.mobile,
+        companyName: user.companyName
       },
-      redirect: '/',
+      token
     });
+
   } catch (error) {
-    return res.status(500).json({ message: 'Server error' });
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error during login' });
   }
 };
 
+// Admin login (special login for superadmin)
 const adminLogin = async (req, res) => {
   try {
     console.log('=== ADMIN LOGIN ATTEMPT ===');
@@ -277,14 +335,10 @@ const adminLogin = async (req, res) => {
     console.log('Expected email:', SUPERADMIN_EMAIL);
     console.log('Admin pass provided:', !!adminPassFromRequest);
 
-    if (providedEmail !== SUPERADMIN_EMAIL) {
-      return res.status(403).json({ message: 'Only superadmin account is allowed' });
-    }
-    if (!adminPassFromRequest) {
-      return res.status(400).json({ message: 'adminPass is required' });
-    }
-    if (String(adminPassFromRequest) !== EXPECTED_ADMIN_PASS) {
-      return res.status(403).json({ message: 'Invalid admin pass' });
+    // Validate credentials
+    if (providedEmail !== SUPERADMIN_EMAIL || adminPassFromRequest !== EXPECTED_ADMIN_PASS) {
+      console.log('Invalid admin credentials');
+      return res.status(401).json({ message: 'Invalid admin credentials' });
     }
 
     console.log('Credentials validated, checking database connection...');
@@ -320,7 +374,35 @@ const adminLogin = async (req, res) => {
         superadminRole = await Role.create({
           name: 'superadmin',
           level: 1,
-          permissions: ['manage_project', 'view_team_dashboard', 'view_sales_data', 'edit_sales_data'],
+          permissions: [
+          "role:manage",
+          "projects:manage",
+          "notifications:read",
+          "notifications:update",
+          "leads:create",
+          "leads:read",
+          "leads:update",
+          "leads:bulk",
+          "leads:transfer",
+          "leadsSource:create",
+          "leadssource:read_all",
+          "leadssource:read",
+          "leadssource:update",
+          "leadssource:delete",
+          "leadsStatus:create",
+          "leadsstatus:read_all",
+          "leadsstatus:read",
+          "leadsstatus:update",
+          "leadsstatus:delete",
+          "user-projects:assign",
+          "user-projects:read",
+          "user-projects:remove",
+          "user-projects:bulk-update",
+          "user-projects:bulk-delete",
+          "reporting:read",
+          "notifications:bulk-update",
+          "notifications:bulk-delete"
+        ],
         });
         console.log('Superadmin role created successfully');
       } catch (createRoleError) {
@@ -371,104 +453,169 @@ const adminLogin = async (req, res) => {
       }
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    // Generate JWT token
+    const payload = {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      level: user.level
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
     setTokenHeaders(res, token);
-    return res.json({
-      token,
+
+    console.log('Admin login successful, returning response');
+    res.json({
+      message: 'Admin login successful',
       user: {
         id: user._id,
         name: user.name,
-        email: SUPERADMIN_EMAIL,
-        mobile: user.mobile,
-        companyName: user.companyName,
+        email: user.email,
         role: user.role,
+        level: user.level,
+        companyName: user.companyName
       },
-      redirect: '/',
+      token,
+      systemInfo: {
+        mongoConnected: mongoose.connection.readyState === 1,
+        superadminRoleExists: !!superadminRole,
+        superadminUserExists: !!user,
+        timestamp: new Date().toISOString()
+      }
     });
+
   } catch (error) {
-    return res.status(500).json({ message: error.message || 'Server error' });
+    console.error('Admin login error:', error);
+    res.status(500).json({ 
+      message: 'Server error during admin login',
+      error: error.message 
+    });
   }
 };
 
+// Get current user
 const currentUser = async (req, res) => {
   try {
-    if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
-    return res.json({
-      id: req.user._id,
-      name: req.user.name,
-      email: req.user.email,
-      mobile: req.user.mobile,
-      companyName: req.user.companyName,
-      role: req.user.role,
-      level: req.user.level,
-    });
+    const user = await User.findById(req.user.id).select('-password');
+    res.json(user);
   } catch (error) {
-    return res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+// Create a new role
 const createRole = async (req, res) => {
-  const { name, level } = req.body || {};
+  const { name, level, permissions } = req.body || {};
+  
   try {
-    if (!name) return res.status(400).json({ message: 'Role name is required' });
-    
-    // Set default level if not provided
-    const roleLevel = level || 3;
+    if (!name || !level || !permissions) {
+      return res.status(400).json({ message: 'name, level, and permissions are required' });
+    }
 
+    // Normalize role name
     const normalized = String(name).toLowerCase().trim();
-    let role = await Role.findOne({ name: normalized });
-    if (role) return res.status(400).json({ message: 'Role already exists', role });
+    
+    // Check if role already exists
+    const existingRole = await Role.findOne({ name: normalized });
+    if (existingRole) {
+      return res.status(400).json({ message: 'Role already exists' });
+    }
 
-    role = await Role.create({ name: normalized, level: roleLevel });
-    res.status(201).json(role);
+    // Validate level (1 = superadmin, 2 = manager, 3 = user, 4 = sales)
+    if (level < 1 || level > 4) {
+      return res.status(400).json({ message: 'Level must be between 1 and 4' });
+    }
+
+    // Validate permissions array
+    if (!Array.isArray(permissions) || permissions.length === 0) {
+      return res.status(400).json({ message: 'Permissions must be a non-empty array' });
+    }
+
+    // Create new role
+    const role = new Role({
+      name: normalized,
+      level,
+      permissions: permissions.map(p => String(p).toLowerCase())
+    });
+
+    await role.save();
+
+    res.status(201).json({
+      message: 'Role created successfully',
+      role: {
+        id: role._id,
+        name: role.name,
+        level: role.level,
+        permissions: role.permissions
+      }
+    });
+
   } catch (error) {
+    console.error('Role creation error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
 
+// Edit an existing role
 const editRole = async (req, res) => {
   const { roleName } = req.params;
   const { name, level, permissions } = req.body || {};
   
   try {
     if (!roleName) return res.status(400).json({ message: 'Role ID is required' });
-    if (!name && level === undefined && !permissions) {
-      return res.status(400).json({ message: 'At least one field (name, level, or permissions) is required' });
+    if (!name && !level && !permissions) {
+      return res.status(400).json({ message: 'At least one field is required for update' });
     }
 
     const role = await Role.findById(roleName);
     if (!role) return res.status(404).json({ message: 'Role not found' });
 
-    // Check if trying to edit superadmin role (level 1) - prevent downgrading
-    if (role.level === 1 && level !== undefined && level > 1) {
-      return res.status(403).json({ message: 'Cannot downgrade superadmin role level' });
+    // Prevent editing superadmin role
+    if (role.name === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot edit superadmin role' });
     }
 
     // Update fields if provided
     if (name) {
       const normalized = String(name).toLowerCase().trim();
-          // Check if new name conflicts with existing role (excluding current role)
-    const existingRole = await Role.findOne({ name: normalized, _id: { $ne: roleName } });
-    if (existingRole) return res.status(400).json({ message: 'Role name already exists' });
+      // Check if new name conflicts with existing role (excluding current role)
+      const existingRole = await Role.findOne({ name: normalized, _id: { $ne: roleName } });
+      if (existingRole) return res.status(400).json({ message: 'Role name already exists' });
       role.name = normalized;
     }
     
     if (level !== undefined) {
-      if (level < 1) return res.status(400).json({ message: 'Level must be >= 1' });
+      if (level < 1 || level > 4) {
+        return res.status(400).json({ message: 'Level must be between 1 and 4' });
+      }
       role.level = level;
     }
     
     if (permissions) {
-      role.permissions = Array.isArray(permissions) ? permissions : [permissions];
+      if (!Array.isArray(permissions) || permissions.length === 0) {
+        return res.status(400).json({ message: 'Permissions must be a non-empty array' });
+      }
+      role.permissions = permissions.map(p => String(p).toLowerCase());
     }
 
     await role.save();
-    res.json({ message: 'Role updated successfully', role });
+    
+    res.json({ 
+      message: 'Role updated successfully', 
+      role: { 
+        id: role._id, 
+        name: role.name, 
+        level: role.level, 
+        permissions: role.permissions 
+      } 
+    });
   } catch (error) {
+    console.error('Role update error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
 
+// Delete a role
 const deleteRole = async (req, res) => {
   const { roleName } = req.params;
   
@@ -478,8 +625,8 @@ const deleteRole = async (req, res) => {
     const role = await Role.findById(roleName);
     if (!role) return res.status(404).json({ message: 'Role not found' });
 
-    // Prevent deletion of superadmin role (level 1)
-    if (role.level === 1) {
+    // Prevent deleting superadmin role
+    if (role.name === 'superadmin') {
       return res.status(403).json({ message: 'Cannot delete superadmin role' });
     }
 
@@ -494,119 +641,75 @@ const deleteRole = async (req, res) => {
     await Role.findByIdAndDelete(roleName);
     res.json({ message: 'Role deleted successfully' });
   } catch (error) {
+    console.error('Role deletion error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
 
+// List all roles
 const listRoles = async (_req, res) => {
   try {
     const roles = await Role.find().sort({ level: 1, name: 1 });
     res.json(roles);
   } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+// Create a user with a specific role
 const createUserWithRole = async (req, res) => {
   const { name, email, password, mobile, companyName, roleName } = req.body || {};
-  try {
-    if (!name || !email || !password || !roleName) {
-      return res.status(400).json({ message: 'Name, email, password, and roleName are required' });
-    }
-
-    let existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ message: 'User already exists' });
-
-    const role = await Role.findOne({ name: String(roleName).toLowerCase().trim() });
-    if (!role) return res.status(400).json({ message: 'Role not found' });
-
-    const user = new User({
-      name,
-      email,
-      password,
-      mobile,
-      companyName,
-      role: role.name,
-      roleRef: role._id,
-      level: role.level,
-    });
-    await user.save();
-
-    res.status(201).json({
-      user: { id: user._id, name, email, mobile, companyName, role: user.role, level: user.level },
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
-  }
-};
-
-// Get users by role - for role-based user filtering
-const getUsersByRole = async (req, res) => {
-  const { roleName } = req.params;
   
   try {
-    if (!roleName) {
-      return res.status(400).json({ message: 'Role name is required' });
+    if (!name || !email || !password || !roleName) {
+      return res.status(400).json({ message: 'name, email, password, and roleName are required' });
     }
 
-    // Find the role first to validate it exists
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Find the specified role
     const role = await Role.findOne({ name: String(roleName).toLowerCase().trim() });
     if (!role) {
       return res.status(404).json({ message: 'Role not found' });
     }
 
-    // Get all users with this role
-    const users = await User.find({ 
-      role: role.name 
-    }).select('-password').sort({ createdAt: -1 });
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    res.json({
-      role: {
-        name: role.name,
-        level: role.level,
-        permissions: role.permissions
-      },
-      users: users,
-      totalCount: users.length
+    // Create new user
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      mobile,
+      companyName,
+      role: role.name,
+      roleRef: role._id,
+      level: role.level
+    });
+
+    await user.save();
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        mobile: user.mobile,
+        companyName: user.companyName
+      }
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message || 'Server error' });
-  }
-};
-
-// Get all users grouped by role - for comprehensive user management
-const getAllUsersGroupedByRole = async (req, res) => {
-  try {
-    // Get all roles
-    const roles = await Role.find().sort({ level: 1 });
-    
-    // Get users grouped by role
-    const usersByRole = {};
-    
-    for (const role of roles) {
-      const users = await User.find({ role: role.name })
-        .select('-password')
-        .sort({ createdAt: -1 });
-      
-      usersByRole[role.name] = {
-        role: {
-          name: role.name,
-          level: role.level,
-          permissions: role.permissions
-        },
-        users: users,
-        count: users.length
-      };
-    }
-
-    res.json({
-      usersByRole,
-      totalRoles: roles.length,
-      totalUsers: Object.values(usersByRole).reduce((sum, group) => sum + group.count, 0)
-    });
-
-  } catch (error) {
+    console.error('User creation error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
@@ -699,6 +802,7 @@ const deleteUserWithRole = async (req, res) => {
     }
 
     // Check if user is part of any projects
+    const Project = require('../models/Project');
     const userProjects = await Project.find({ members: userId });
     if (userProjects.length > 0) {
       return res.status(400).json({ 
@@ -749,6 +853,87 @@ const getUserById = async (req, res) => {
   }
 };
 
+// Get users by role
+const getUsersByRole = async (req, res) => {
+  const { roleName } = req.params;
+  
+  try {
+    if (!roleName) return res.status(400).json({ message: 'Role name is required' });
+
+    const role = await Role.findOne({ name: String(roleName).toLowerCase().trim() });
+    if (!role) return res.status(404).json({ message: 'Role not found' });
+
+    const users = await User.find({ roleRef: role._id }).select('-password');
+    
+    res.json({
+      role: {
+        id: role._id,
+        name: role.name,
+        level: role.level,
+        permissions: role.permissions
+      },
+      users: users.map(user => ({
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        companyName: user.companyName,
+        role: user.role,
+        level: user.level,
+        createdAt: user.createdAt
+      })),
+      count: users.length
+    });
+
+  } catch (error) {
+    console.error('Get users by role error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get all users grouped by role
+const getAllUsersGroupedByRole = async (_req, res) => {
+  try {
+    const roles = await Role.find().sort({ level: 1, name: 1 });
+    const users = await User.find().select('-password');
+    
+    const usersByRole = {};
+    
+    for (const role of roles) {
+      const roleUsers = users.filter(user => String(user.roleRef) === String(role._id));
+      usersByRole[role.name] = {
+        role: {
+          id: role._id,
+          name: role.name,
+          level: role.level,
+          permissions: role.permissions
+        },
+        users: roleUsers.map(user => ({
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          mobile: user.mobile,
+          companyName: user.companyName,
+          role: user.role,
+          level: user.level,
+          createdAt: user.createdAt
+        })),
+        count: roleUsers.length
+      };
+    }
+
+    res.json({
+      totalRoles: roles.length,
+      totalUsers: users.length,
+      usersByRole
+    });
+
+  } catch (error) {
+    console.error('Get all users grouped by role error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
 // Get comprehensive user history and project assignments
 const getUserHistory = async (req, res) => {
   const { userId } = req.params;
@@ -767,6 +952,7 @@ const getUserHistory = async (req, res) => {
     const currentRole = await Role.findById(targetUser.roleRef);
     
     // Find all projects where user is a member, owner, or manager
+    const Project = require('../models/Project');
     const projects = await Project.find({
       $or: [
         { members: userId },
@@ -894,6 +1080,7 @@ const getUserTimeline = async (req, res) => {
     const currentRole = await Role.findById(targetUser.roleRef);
     
     // Find all projects where user is a member, owner, or manager
+    const Project = require('../models/Project');
     const projects = await Project.find({
       $or: [
         { members: userId },
@@ -1084,6 +1271,7 @@ const getAllUsersWithHistory = async (req, res) => {
 
     for (const user of users) {
       // Get user's projects
+      const Project = require('../models/Project');
       const projects = await Project.find({
         $or: [
           { members: user._id },
@@ -1144,6 +1332,82 @@ const getAllUsersWithHistory = async (req, res) => {
   }
 };
 
+// Update superadmin role permissions
+const updateSuperadminPermissions = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Access denied. Superadmin role required.' });
+    }
+
+    const superadminRole = await Role.findOne({ name: 'superadmin' });
+    if (!superadminRole) {
+      return res.status(404).json({ message: 'Superadmin role not found' });
+    }
+
+    const newPermissions = [
+      "role:manage",
+      "projects:manage",
+      "notifications:read",
+      "notifications:update",
+      "leads:create",
+      "leads:read",
+      "leads:update",
+      "leads:bulk",
+      "leads:transfer",
+      "leadsSource:create",
+      "leadssource:read_all",
+      "leadssource:read",
+      "leadssource:update",
+      "leadssource:delete",
+      "leadsStatus:create",
+      "leadsstatus:read_all",
+      "leadsstatus:read",
+      "leadsstatus:update",
+      "leadsstatus:delete",
+      "user-projects:assign",
+      "user-projects:read",
+      "user-projects:remove",
+      "user-projects:bulk-update",
+      "user-projects:bulk-delete",
+      "reporting:read",
+      "notifications:bulk-update",
+      "notifications:bulk-delete"
+    ];
+
+    // Update permissions
+    superadminRole.permissions = newPermissions;
+    await superadminRole.save();
+
+    res.json({
+      message: 'Superadmin permissions updated successfully',
+      role: {
+        id: superadminRole._id,
+        name: superadminRole.name,
+        level: superadminRole.level,
+        permissions: superadminRole.permissions,
+        updatedAt: superadminRole.updatedAt
+      },
+      summary: {
+        totalPermissions: newPermissions.length,
+        permissionCategories: {
+          roles: newPermissions.filter(p => p.startsWith('role:')).length,
+          projects: newPermissions.filter(p => p.startsWith('projects:')).length,
+          notifications: newPermissions.filter(p => p.startsWith('notifications:')).length,
+          leads: newPermissions.filter(p => p.startsWith('leads')).length,
+          leadSources: newPermissions.filter(p => p.startsWith('leadssource:')).length,
+          leadStatuses: newPermissions.filter(p => p.startsWith('leadsstatus:')).length,
+          userProjects: newPermissions.filter(p => p.startsWith('user-projects:')).length,
+          reporting: newPermissions.filter(p => p.startsWith('reporting:')).length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Update superadmin permissions error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -1165,4 +1429,5 @@ module.exports = {
   getUserHistory,
   getUserTimeline,
   getAllUsersWithHistory,
+  updateSuperadminPermissions,
 };

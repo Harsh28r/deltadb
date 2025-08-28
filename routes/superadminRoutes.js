@@ -1,30 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory } = require('../controllers/superadminController');
+const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions } = require('../controllers/superadminController');
 const superadmin = require('../middleware/superadmin');
 
-
-// Public auth
+// Public routes (no authentication required)
 router.post('/register', registerUser);
+router.post('/register/manager', registerManager);
+router.post('/register/sales', registerSales);
 router.post('/login', loginUser);
-router.get('/login', loginUser); // GET variant using query params
-router.post('/admin-login', adminLogin); // direct superadmin login with fixed admin pass
-router.get('/admin-login', adminLogin); // GET variant using query params
+router.post('/admin-login', adminLogin);
+router.post('/init-superadmin', initSuperadmin);
 
-// Superadmin-only creates
-// router.post('/register-superadmin', superadmin, registerSuperadmin);
-router.post('/create-manager', superadmin, registerManager);
-router.post('/create-sales', superadmin, registerSales);
-
-
+// Superadmin only routes
 router.post('/roles', superadmin, createRole);
-router.get('/roles', superadmin, listRoles);
 router.put('/roles/:roleName', superadmin, editRole);
 router.delete('/roles/:roleName', superadmin, deleteRole);
+router.get('/roles', superadmin, listRoles);
+
+// Update superadmin permissions
+router.put('/superadmin/permissions', superadmin, updateSuperadminPermissions);
+
 router.post('/create-user', superadmin, createUserWithRole);
 
-// User management by role
-router.get('/users/role/:roleName', superadmin, getUsersByRole);
+// User management routes
 router.get('/users/by-role', superadmin, getAllUsersGroupedByRole);
 
 // Individual user management
@@ -39,8 +37,5 @@ router.get('/users/history/all', superadmin, getAllUsersWithHistory);
 
 // Who am I
 router.get('/me', superadmin, currentUser);
-
-// One-time setup to create first superadmin if none exists
-router.post('/init-superadmin', initSuperadmin);
 
 module.exports = router;
