@@ -1,6 +1,10 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
+const rateLimit = require('express-rate-limit');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
 
 // const userRoutes = require('./routes/userRoutes');
@@ -8,9 +12,19 @@ const projectRoutes = require('./routes/projectRoutes');
 // const taskRoutes = require('./routes/taskRoutes');
 const superadminRoutes = require('./routes/superadminRoutes');
 const cpSourceRoutes = require('./routes/cpSourceRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
+const leadSourceRoutes = require('./routes/leadSourceRoutes');
+const leadStatusRoutes = require('./routes/leadStatusRoutes');
+const leadRoutes = require('./routes/leadRoutes');
+const userReportingRoutes = require('./routes/userReportingRoutes');
+const userProjectRoutes = require('./routes/userProjectRoutes');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' } // Adjust for production
+});
 
 // Middleware
 // CORS configuration - flexible for development and production
@@ -39,51 +53,61 @@ app.use(cors({
   exposedHeaders: ['Authorization', 'x-auth-token']
 }));
 
-
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
-// Database connection check middleware
-app.use((req, res, next) => {
-  if (!isMongoConnected) {
-    return res.status(503).json({ 
-      error: 'Service temporarily unavailable',
-      message: 'Database connection not ready. Please try again in a few seconds.',
-      timestamp: new Date().toISOString(),
-      details: 'MongoDB connection is being established. This is normal during deployment startup.'
-    });
-  }
-  next();
+// Global rate limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+  message: 'Too many requests, please try again later.'
 });
+app.use(limiter);
 
 // MongoDB connection string
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI =  'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 // Log MongoDB URI
 console.log('MONGO_URI:', MONGO_URI);
 
 // Global variable to track connection status
 let isMongoConnected = false;
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 5;
 
 // Connect to MongoDB
-mongoose.connect(MONGO_URI, {
-  serverSelectionTimeoutMS: 30000, // 30 second timeout for deployment
-  socketTimeoutMS: 45000, // 45 second timeout
-  maxPoolSize: 10, // Connection pool size
-  retryWrites: true,
-  w: 'majority'
-})
-  .then(() => {
+const connectToMongoDB = async () => {
+  try {
+    if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+      console.error('Max connection attempts reached. Starting server without MongoDB...');
+      startServer();
+      return;
+    }
+
+    connectionAttempts++;
+    console.log(`MongoDB connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
+    
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 30000, // 30 second timeout for deployment
+      socketTimeoutMS: 45000, // 45 second timeout
+      maxPoolSize: 10, // Connection pool size
+      retryWrites: true,
+      w: 'majority'
+    });
+    
     console.log('MongoDB connected successfully');
     isMongoConnected = true;
-  })
-  .catch((err) => {
+    startServer();
+  } catch (err) {
     console.error('MongoDB connection error:', err.message);
     console.error('Full error:', JSON.stringify(err, null, 2));
-    // Don't exit process, let it retry
     isMongoConnected = false;
-  });
+    
+    // Retry connection after 5 seconds
+    setTimeout(connectToMongoDB, 5000);
+  }
+};
 
 // Listen for connection events
 mongoose.connection.on('connected', () => {
@@ -99,18 +123,19 @@ mongoose.connection.on('error', (err) => {
 mongoose.connection.on('disconnected', () => {
   console.log('Mongoose disconnected from MongoDB');
   isMongoConnected = false;
-  
-  // Retry connection after 5 seconds
-  setTimeout(() => {
-    console.log('Attempting to reconnect to MongoDB...');
-    mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-      retryWrites: true,
-      w: 'majority'
+});
+
+// Database connection check middleware
+app.use((req, res, next) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ 
+      error: 'Service temporarily unavailable',
+      message: 'Database connection not ready. Please try again in a few seconds.',
+      timestamp: new Date().toISOString(),
+      details: 'MongoDB connection is being established. This is normal during deployment startup.'
     });
-  }, 5000);
+  }
+  next();
 });
 
 // Routes
@@ -119,11 +144,23 @@ app.use('/api/projects', projectRoutes);
 // app.use('/api/tasks', taskRoutes);
 app.use('/api/superadmin', superadminRoutes);
 app.use('/api/cp-sources', cpSourceRoutes);
+app.use('/api/notifications', notificationRoutes);
 
+app.use('/api/lead-sources', leadSourceRoutes);
+app.use('/api/lead-statuses', leadStatusRoutes);
+app.use('/api/leads', leadRoutes);
+app.use('/api/user-reporting', userReportingRoutes);
+app.use('/api/user-projects', userProjectRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
-  res.send('Flow Backend API');
+  res.send('DeltaYards CRM API');
+});
+
+// Socket.io for real-time location updates
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
 });
 
 // Debug route to test CORS
@@ -182,21 +219,19 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start server with connection check
+// Start server
 const PORT = process.env.PORT || 5000;
 
-// Wait for MongoDB connection before starting server
 const startServer = () => {
-  if (isMongoConnected) {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log('MongoDB connection status:', isMongoConnected);
-    });
-  } else {
-    console.log('Waiting for MongoDB connection...');
-    setTimeout(startServer, 2000);
-  }
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log('MongoDB connection status:', isMongoConnected);
+    if (!isMongoConnected) {
+      console.log('Warning: Server started without MongoDB connection');
+    }
+  });
 };
 
-// Start server after 3 seconds to allow MongoDB connection
-setTimeout(startServer, 3000);
+// Start MongoDB connection
+console.log('Starting MongoDB connection...');
+connectToMongoDB();

@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// Generic auth middleware: attaches req.user if token is valid
 module.exports = async function auth(req, res, next) {
   try {
     console.log('=== AUTH MIDDLEWARE DEBUG ===');
