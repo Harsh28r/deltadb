@@ -7,22 +7,50 @@ const upload = multer({ dest: 'uploads/' });
 
 // CRUD
 const createLead = async (req, res) => {
-  const lead = new Lead(req.body);
-  // Validate customData against initial status form
-  await lead.save();
-  res.status(201).json(lead);
+   try {
+    const lead = new Lead(req.body);
+    // Validate customData against initial status form
+    await lead.save();
+    res.status(201).json(lead);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
 };
 
 const getLeads = async (req, res) => {
-  const leads = await Lead.find().populate('user project channelPartner leadSource currentStatus');
-  res.json(leads);
+  try {
+    const { projectId } = req.query;
+    let query = {};
+    
+    if (projectId) {
+      query.project = projectId;
+    }
+    
+    const leads = await Lead.find(query).populate('user project channelPartner leadSource currentStatus');
+    res.json(leads);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getLeadById = async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.id).populate('user project channelPartner leadSource currentStatus');
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead not found' });
+    }
+    res.json(lead);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 // Change status
 const changeLeadStatus = async (req, res) => {
-  const lead = await Lead.findById(req.params.id);
-  if (!lead) return res.status(404).json({ message: 'Lead not found' });
   try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+    
     await lead.changeStatus(req.body.newStatus, req.body.newData);
     res.json(lead);
   } catch (err) {
@@ -53,15 +81,58 @@ const bulkUploadLeads = async (req, res) => {
 
 // Bulk transfer
 const transferLeads = async (req, res) => {
-  const { fromUser, toUser, leadIds } = req.body;
-  // Check hierarchy or permission
-  const result = await Lead.updateMany(
-    { _id: { $in: leadIds }, user: fromUser },
-    { $set: { user: toUser } }
-  );
-  res.json({ message: 'Leads transferred', count: result.modifiedCount });
+  try {
+    const { fromUser, toUser, leadIds } = req.body;
+    // Check hierarchy or permission
+    const result = await Lead.updateMany(
+      { _id: { $in: leadIds }, user: fromUser },
+      { $set: { user: toUser } }
+    );
+    res.json({ message: 'Leads transferred', count: result.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Others: getById, update, delete
+// Update lead
+const updateLead = async (req, res) => {
+  try {
+    const lead = await Lead.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { new: true, runValidators: true }
+    ).populate('user project channelPartner leadSource currentStatus');
+    
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead not found' });
+    }
+    
+    res.json(lead);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
 
-module.exports = { createLead, getLeads, changeLeadStatus, bulkUploadLeads: upload.single('file'), transferLeads /* , others */ };
+// Delete lead
+const deleteLead = async (req, res) => {
+  try {
+    const lead = await Lead.findByIdAndDelete(req.params.id);
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead not found' });
+    }
+    res.json({ message: 'Lead deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { 
+  createLead, 
+  getLeads, 
+  getLeadById,
+  changeLeadStatus, 
+  bulkUploadLeads: upload.single('file'), 
+  transferLeads,
+  updateLead,
+  deleteLead
+};
