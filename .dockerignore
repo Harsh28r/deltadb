@@ -126,3 +126,4 @@ ecosystem.config.js
 
 # Uploads (will be mounted as volume)
 uploads/
+
