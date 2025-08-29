@@ -59,3 +59,4 @@ try {
   console.log('   2. Copy the content from env-template.txt');
   console.log('   3. Fill in your actual values');
 }
+
