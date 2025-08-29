@@ -169,7 +169,7 @@ app.get('/api/cors-test-realtech', (req, res) => {
   });
 });
 
-// Database health check route
+// Database health check route fff
 app.get('/api/health', async (req, res) => {
   try {
     const mongoose = require('mongoose');
