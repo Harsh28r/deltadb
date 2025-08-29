@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
-const rateLimit = require('express-rate-limit');
+// const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
@@ -36,13 +36,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-// Global rate limiter
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per window
-  message: 'Too many requests, please try again later.'
-});
-app.use(limiter);
+// Global rate limiter - disabled for Vercel compatibility
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // Limit each IP to 100 requests per window
+//   message: 'Too many requests, please try again later.'
+// });
+// app.use(limiter);
 
 // MongoDB connection stringhudugbdrr
 const MONGO_URI =  'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
@@ -232,4 +232,7 @@ connectToMongoDB();
 
 // CORS preflight handler for admin-login endpoint
 app.options('/api/superadmin/admin-login', cors(adminLoginCorsOptions));
+
+// Export for Vercel
+module.exports = app;
 
