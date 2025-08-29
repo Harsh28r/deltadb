@@ -44,7 +44,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// MongoDB connection string
+// MongoDB connection stringhudugbd
 const MONGO_URI =  'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 // Log MongoDB URI
