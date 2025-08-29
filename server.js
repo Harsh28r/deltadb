@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const { corsOptions, adminLoginCorsOptions, corsDebug } = require('./middleware/cors');
 
 // const userRoutes = require('./routes/userRoutes');
 const projectRoutes = require('./routes/projectRoutes');
@@ -27,31 +28,9 @@ const io = new Server(server, {
 });
 
 // Middleware
-// CORS configuration - flexible for development and production
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Allow localhost for development
-    if (origin === 'http://localhost:3000') return callback(null, true);
-    
-    // Allow any vercel.app domain
-    if (origin.includes('vercel.app')) return callback(null, true);
-    
-    // Allow realtechmktg.com domain
-    if (origin === 'https://www.realtechmktg.com') return callback(null, true);
-    
-    // Allow all origins in development
-    if (process.env.NODE_ENV === 'development') return callback(null, true);
-    
-    callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
-  exposedHeaders: ['Authorization', 'x-auth-token']
-}));
+// CORS configuration using dedicated middleware
+app.use(cors(corsOptions));
+app.use(corsDebug);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -175,6 +154,21 @@ app.get('/api/test-cors', (req, res) => {
   });
 });
 
+// CORS test endpoint specifically for realtechmktg.com
+app.get('/api/cors-test-realtech', (req, res) => {
+  console.log('🔍 RealTech CORS test request:');
+  console.log('  Origin:', req.headers.origin);
+  console.log('  Method:', req.method);
+  console.log('  Headers:', req.headers);
+  
+  res.json({ 
+    message: 'RealTech CORS test successful',
+    origin: req.headers.origin,
+    allowed: true,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Database health check route
 app.get('/api/health', async (req, res) => {
   try {
@@ -235,3 +229,7 @@ const startServer = () => {
 // Start MongoDB connection
 console.log('Starting MongoDB connection...');
 connectToMongoDB();
+
+// CORS preflight handler for admin-login endpoint
+app.options('/api/superadmin/admin-login', cors(adminLoginCorsOptions));
+
