@@ -12,7 +12,7 @@ const checkPermission = (permission) => async (req, res, next) => {
     }
   };
 
-// For hierarchy, example: check if target user reports to req.user or same level
+// For hierarchy, example: check if target user reports to req.user or same level ggf
 const checkHierarchy = async (req, res, next) => {
     try {
         // Implement logic based on reportingTo chain
