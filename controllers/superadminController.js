@@ -26,15 +26,11 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create new user with default role
+    // Create new user with default role (password will be hashed by User model middleware)
     const user = new User({
       name,
       email: email.toLowerCase(),
-      password: hashedPassword,
+      password: password,
       mobile,
       companyName,
       role: 'user',
@@ -85,15 +81,11 @@ const registerManager = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create new manager
+    // Create new manager (password will be hashed by User model middleware)
     const user = new User({
       name,
       email: email.toLowerCase(),
-      password: hashedPassword,
+      password: password,
       mobile,
       companyName,
       role: 'manager',
@@ -144,15 +136,11 @@ const registerSales = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create new sales person
+    // Create new sales person (password will be hashed by User model middleware)
     const user = new User({
       name,
       email: email.toLowerCase(),
-      password: hashedPassword,
+      password: password,
       mobile,
       companyName,
       role: 'sales',
@@ -284,8 +272,8 @@ const loginUser = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Check password using User model's matchPassword method
+    const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -677,15 +665,11 @@ const createUserWithRole = async (req, res) => {
       return res.status(404).json({ message: 'Role not found' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create new user
+    // Create new user (password will be hashed by User model middleware)
     const user = new User({
       name,
       email: email.toLowerCase(),
-      password: hashedPassword,
+      password: password,
       mobile,
       companyName,
       role: role.name,
@@ -717,11 +701,11 @@ const createUserWithRole = async (req, res) => {
 // Edit user with role
 const editUserWithRole = async (req, res) => {
   const { userId } = req.params;
-  const { name, email, mobile, companyName, roleName } = req.body || {};
+  const { name, email, mobile, companyName, roleName, password } = req.body || {};
   
   try {
     if (!userId) return res.status(400).json({ message: 'User ID is required' });
-    if (!name && !email && !mobile && !companyName && !roleName) {
+    if (!name && !email && !mobile && !companyName && !roleName && !password) {
       return res.status(400).json({ message: 'At least one field is required for update' });
     }
 
@@ -748,6 +732,11 @@ const editUserWithRole = async (req, res) => {
         }
         user.email = normalizedEmail;
       }
+    }
+
+    // Handle password update
+    if (password) {
+      user.password = password;
     }
 
     // Handle role update
@@ -1408,6 +1397,740 @@ const updateSuperadminPermissions = async (req, res) => {
   }
 };
 
+// Get users with their project assignments
+const getUsersWithProjects = async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    const usersWithProjects = [];
+
+    for (const user of users) {
+      // Get user's projects
+      const Project = require('../models/Project');
+      const UserProject = require('../models/UserProject');
+      
+      // Get user-project assignments
+      const userProjects = await UserProject.find({ user: user._id })
+        .populate('project', 'name location developBy status createdAt')
+        .sort({ assignedAt: -1 });
+
+      // Get user's role details
+      const role = await Role.findById(user.roleRef);
+
+      const userWithProjects = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        companyName: user.companyName,
+        currentRole: {
+          name: user.role,
+          level: user.level,
+          permissions: role ? role.permissions : [],
+          roleId: user.roleRef
+        },
+        projectAssignments: userProjects.map(up => ({
+          assignmentId: up._id,
+          projectId: up.project._id,
+          projectName: up.project.name,
+          location: up.project.location,
+          developBy: up.project.developBy,
+          projectStatus: up.project.status,
+          assignedAt: up.assignedAt
+        })),
+        projectSummary: {
+          totalProjects: userProjects.length,
+          activeProjects: userProjects.filter(up => up.project.status === 'active').length,
+          completedProjects: userProjects.filter(up => up.project.status === 'completed').length,
+          pendingProjects: userProjects.filter(up => up.project.status === 'pending').length
+        },
+        accountCreated: user.createdAt,
+        lastActivity: userProjects.length > 0 ? Math.max(...userProjects.map(up => up.assignedAt)) : user.createdAt
+      };
+
+      usersWithProjects.push(userWithProjects);
+    }
+
+    // Sort by most recent activity
+    usersWithProjects.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+
+    res.json({
+      totalUsers: usersWithProjects.length,
+      users: usersWithProjects,
+      summary: {
+        totalProjects: usersWithProjects.reduce((sum, u) => sum + u.projectSummary.totalProjects, 0),
+        activeUsers: usersWithProjects.filter(u => u.projectSummary.totalProjects > 0).length,
+        inactiveUsers: usersWithProjects.filter(u => u.projectSummary.totalProjects === 0).length,
+        totalActiveProjects: usersWithProjects.reduce((sum, u) => sum + u.projectSummary.activeProjects, 0),
+        totalCompletedProjects: usersWithProjects.reduce((sum, u) => sum + u.projectSummary.completedProjects, 0)
+      }
+    });
+
+  } catch (error) {
+    console.error('Get users with projects error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Create user with optional project assignment
+const createUserWithProjects = async (req, res) => {
+  const { 
+    name, 
+    email, 
+    password, 
+    mobile, 
+    companyName, 
+    roleName, 
+    projects 
+  } = req.body || {};
+  
+  try {
+    if (!name || !email || !password || !roleName) {
+      return res.status(400).json({ 
+        message: 'name, email, password, and roleName are required' 
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Find the specified role
+    const role = await Role.findOne({ name: String(roleName).toLowerCase().trim() });
+    if (!role) {
+      return res.status(404).json({ message: 'Role not found' });
+    }
+
+    // Create new user (password will be hashed by User model middleware)
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: password,
+      mobile,
+      companyName,
+      role: role.name,
+      roleRef: role._id,
+      level: role.level
+    });
+
+    await user.save();
+
+    let projectAssignments = [];
+    
+    // If projects are provided, assign user to them
+    if (projects && Array.isArray(projects) && projects.length > 0) {
+      const Project = require('../models/Project');
+      const UserProject = require('../models/UserProject');
+      const { Types: { ObjectId } } = require('mongoose');
+
+      // Normalize input to list of string IDs (accept strings or { projectId } objects)
+      const normalizedProjectIds = projects
+        .map(p => {
+          if (typeof p === 'string') return p;
+          if (p && typeof p === 'object') return p.projectId || p.id || p._id || null;
+          return null;
+        })
+        .filter(Boolean);
+
+      for (const projectId of normalizedProjectIds) {
+        // Validate ObjectId format
+        if (!ObjectId.isValid(projectId)) {
+          console.warn(`Invalid project id ${projectId}, skipping assignment`);
+          continue;
+        }
+
+        // Verify project exists
+        const project = await Project.findById(projectId);
+        if (!project) {
+          console.warn(`Project ${projectId} not found, skipping assignment`);
+          continue;
+        }
+
+        // Create user-project assignment
+        try {
+          const userProject = new UserProject({
+            user: user._id,
+            project: project._id,
+            assignedAt: new Date()
+          });
+
+          await userProject.save();
+
+          // Add user to project members
+          if (!project.members.includes(user._id)) {
+            project.members.push(user._id);
+            await project.save();
+          }
+
+          projectAssignments.push({
+            projectId: project._id,
+            projectName: project.name,
+            assignedAt: userProject.assignedAt
+          });
+        } catch (e) {
+          // Ignore duplicate assignment errors
+          if (e && e.code === 11000) {
+            console.warn(`Duplicate assignment for user ${user._id} and project ${project._id}, skipping`);
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+
+    res.status(201).json({
+      message: 'User created successfully with project assignments',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        mobile: user.mobile,
+        companyName: user.companyName
+      },
+      projectAssignments: projectAssignments,
+      summary: {
+        userCreated: true,
+        projectsAssigned: projectAssignments.length,
+        totalProjects: Array.isArray(projects) ? projects.filter(Boolean).length : 0
+      }
+    });
+
+  } catch (error) {
+    console.error('User creation with projects error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Update user's project assignments
+const updateUserProjects = async (req, res) => {
+  const { userId, projects } = req.body || {};
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    if (!projects || !Array.isArray(projects)) {
+      return res.status(400).json({ message: 'Projects array is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const Project = require('../models/Project');
+    const UserProject = require('../models/UserProject');
+    const { ObjectId } = require('mongoose').Types;
+
+    // Normalize project IDs (accept both strings and objects)
+    const normalizedProjectIds = projects
+      .map(p => typeof p === 'string' ? p : p.projectId)
+      .filter(Boolean);
+
+    // Remove existing project assignments
+    await UserProject.deleteMany({ user: user._id });
+
+    // Remove user from project members
+    const existingAssignments = await UserProject.find({ user: user._id });
+    for (const assignment of existingAssignments) {
+      const project = await Project.findById(assignment.project);
+      if (project && project.members.includes(user._id)) {
+        project.members = project.members.filter(memberId => memberId.toString() !== user._id.toString());
+        await project.save();
+      }
+    }
+
+    const updatedAssignments = [];
+
+    // Add new project assignments
+    for (const projectId of normalizedProjectIds) {
+      // Validate ObjectId format
+      if (!ObjectId.isValid(projectId)) {
+        console.warn(`Invalid project id ${projectId}, skipping assignment`);
+        continue;
+      }
+
+      // Verify project exists
+      const project = await Project.findById(projectId);
+      if (!project) {
+        console.warn(`Project ${projectId} not found, skipping assignment`);
+        continue;
+      }
+
+      // Create user-project assignment
+      try {
+        const userProject = new UserProject({
+          user: user._id,
+          project: project._id,
+          assignedAt: new Date()
+        });
+
+        await userProject.save();
+
+        // Add user to project members
+        if (!project.members.includes(user._id)) {
+          project.members.push(user._id);
+          await project.save();
+        }
+
+        updatedAssignments.push({
+          projectId: project._id,
+          projectName: project.name,
+          assignedAt: userProject.assignedAt
+        });
+      } catch (e) {
+        // Ignore duplicate assignment errors
+        if (e && e.code === 11000) {
+          console.warn(`Duplicate assignment for user ${user._id} and project ${project._id}, skipping`);
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    res.json({
+      message: 'User project assignments updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      projectAssignments: updatedAssignments,
+      summary: {
+        previousAssignments: existingAssignments.length,
+        newAssignments: updatedAssignments.length,
+        totalProjects: normalizedProjectIds.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Update user projects error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Delete user's project assignments
+const deleteUserProjects = async (req, res) => {
+  const { userId } = req.params;
+  const { projectIds } = req.body || {}; // Optional: specific project IDs to remove
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const Project = require('../models/Project');
+    const UserProject = require('../models/UserProject');
+    const { ObjectId } = require('mongoose').Types;
+
+    let query = { user: user._id };
+    let removedAssignments = [];
+
+    if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
+      // Remove specific projects
+      const validProjectIds = projectIds.filter(id => ObjectId.isValid(id));
+      query.project = { $in: validProjectIds };
+      
+      // Get assignments before deletion
+      removedAssignments = await UserProject.find(query).populate('project', 'name');
+    } else {
+      // Remove all projects
+      removedAssignments = await UserProject.find(query).populate('project', 'name');
+    }
+
+    // Delete user-project assignments
+    const deleteResult = await UserProject.deleteMany(query);
+
+    // Remove user from project members
+    for (const assignment of removedAssignments) {
+      if (assignment.project) {
+        const project = await Project.findById(assignment.project._id);
+        if (project && project.members.includes(user._id)) {
+          project.members = project.members.filter(memberId => memberId.toString() !== user._id.toString());
+          await project.save();
+        }
+      }
+    }
+
+    res.json({
+      message: 'User project assignments deleted successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      deletedAssignments: removedAssignments.map(assignment => ({
+        projectId: assignment.project._id,
+        projectName: assignment.project.name,
+        assignedAt: assignment.assignedAt
+      })),
+      summary: {
+        assignmentsRemoved: deleteResult.deletedCount,
+        totalRemoved: removedAssignments.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete user projects error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Assign projects to existing user
+const assignProjectsToUser = async (req, res) => {
+  const { userId } = req.params;
+  const { projects } = req.body || {};
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    if (!projects || !Array.isArray(projects) || projects.length === 0) {
+      return res.status(400).json({ message: 'Projects array is required and cannot be empty' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const Project = require('../models/Project');
+    const UserProject = require('../models/UserProject');
+    const { ObjectId } = require('mongoose').Types;
+
+    // Normalize project IDs (accept both strings and objects)
+    const normalizedProjectIds = projects
+      .map(p => typeof p === 'string' ? p : p.projectId)
+      .filter(Boolean);
+
+    const newAssignments = [];
+    const skippedAssignments = [];
+
+    // Assign projects to user
+    for (const projectId of normalizedProjectIds) {
+      // Validate ObjectId format
+      if (!ObjectId.isValid(projectId)) {
+        console.warn(`Invalid project id ${projectId}, skipping assignment`);
+        skippedAssignments.push({ projectId, reason: 'Invalid project ID format' });
+        continue;
+      }
+
+      // Verify project exists
+      const project = await Project.findById(projectId);
+      if (!project) {
+        console.warn(`Project ${projectId} not found, skipping assignment`);
+        skippedAssignments.push({ projectId, reason: 'Project not found' });
+        continue;
+      }
+
+      // Check if assignment already exists
+      const existingAssignment = await UserProject.findOne({
+        user: user._id,
+        project: project._id
+      });
+
+      if (existingAssignment) {
+        console.warn(`User ${user._id} already assigned to project ${project._id}, skipping`);
+        skippedAssignments.push({ 
+          projectId, 
+          projectName: project.name,
+          reason: 'User already assigned to this project' 
+        });
+        continue;
+      }
+
+      // Create user-project assignment
+      try {
+        const userProject = new UserProject({
+          user: user._id,
+          project: project._id,
+          assignedAt: new Date()
+        });
+
+        await userProject.save();
+
+        // Add user to project members
+        if (!project.members.includes(user._id)) {
+          project.members.push(user._id);
+          await project.save();
+        }
+
+        newAssignments.push({
+          projectId: project._id,
+          projectName: project.name,
+          assignedAt: userProject.assignedAt
+        });
+      } catch (e) {
+        console.error(`Error assigning project ${projectId} to user ${user._id}:`, e);
+        skippedAssignments.push({ projectId, reason: 'Database error during assignment' });
+      }
+    }
+
+    res.json({
+      message: 'Project assignments completed',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      newAssignments: newAssignments,
+      skippedAssignments: skippedAssignments,
+      summary: {
+        totalRequested: normalizedProjectIds.length,
+        successfullyAssigned: newAssignments.length,
+        skipped: skippedAssignments.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Assign projects to user error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get all projects with user assignment status and handle assignment
+const getUserProjectsAssignment = async (req, res) => {
+  const { userId } = req.params;
+  const { action, projectIds } = req.body || {};
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const Project = require('../models/Project');
+    const UserProject = require('../models/UserProject');
+    const { ObjectId } = require('mongoose').Types;
+
+    // Get all projects
+    const allProjects = await Project.find().sort({ name: 1 });
+    
+    // Get user's current project assignments
+    const userAssignments = await UserProject.find({ user: user._id });
+    const userProjectIds = userAssignments.map(assignment => assignment.project.toString());
+
+    // Prepare projects with assignment status
+    const projectsWithStatus = allProjects.map(project => ({
+      _id: project._id,
+      name: project.name,
+      location: project.location,
+      developBy: project.developBy,
+      status: project.status,
+      createdAt: project.createdAt,
+      isAssigned: userProjectIds.includes(project._id.toString()),
+      assignedAt: userAssignments.find(assignment => 
+        assignment.project.toString() === project._id.toString()
+      )?.assignedAt || null
+    }));
+
+    // If action is provided, handle project assignment/removal
+    if (action && projectIds && Array.isArray(projectIds)) {
+      let result = {};
+
+      if (action === 'assign') {
+        // Assign new projects
+        const newAssignments = [];
+        const skippedAssignments = [];
+
+        for (const projectId of projectIds) {
+          if (!ObjectId.isValid(projectId)) {
+            skippedAssignments.push({ projectId, reason: 'Invalid project ID format' });
+            continue;
+          }
+
+          const project = await Project.findById(projectId);
+          if (!project) {
+            skippedAssignments.push({ projectId, reason: 'Project not found' });
+            continue;
+          }
+
+          // Check if already assigned
+          const existingAssignment = await UserProject.findOne({
+            user: user._id,
+            project: project._id
+          });
+
+          if (existingAssignment) {
+            skippedAssignments.push({ 
+              projectId, 
+              projectName: project.name,
+              reason: 'User already assigned to this project' 
+            });
+            continue;
+          }
+
+          // Create assignment
+          try {
+            const userProject = new UserProject({
+              user: user._id,
+              project: project._id,
+              assignedAt: new Date()
+            });
+
+            await userProject.save();
+
+            // Add user to project members
+            if (!project.members.includes(user._id)) {
+              project.members.push(user._id);
+              await project.save();
+            }
+
+            newAssignments.push({
+              projectId: project._id,
+              projectName: project.name,
+              assignedAt: userProject.assignedAt
+            });
+          } catch (e) {
+            skippedAssignments.push({ projectId, reason: 'Database error during assignment' });
+          }
+        }
+
+        result = {
+          action: 'assign',
+          newAssignments,
+          skippedAssignments,
+          summary: {
+            totalRequested: projectIds.length,
+            successfullyAssigned: newAssignments.length,
+            skipped: skippedAssignments.length
+          }
+        };
+
+      } else if (action === 'remove') {
+        // Remove project assignments
+        const removedAssignments = [];
+        const skippedRemovals = [];
+
+        for (const projectId of projectIds) {
+          if (!ObjectId.isValid(projectId)) {
+            skippedRemovals.push({ projectId, reason: 'Invalid project ID format' });
+            continue;
+          }
+
+          const project = await Project.findById(projectId);
+          if (!project) {
+            skippedRemovals.push({ projectId, reason: 'Project not found' });
+            continue;
+          }
+
+          // Check if assigned
+          const existingAssignment = await UserProject.findOne({
+            user: user._id,
+            project: project._id
+          });
+
+          if (!existingAssignment) {
+            skippedRemovals.push({ 
+              projectId, 
+              projectName: project.name,
+              reason: 'User not assigned to this project' 
+            });
+            continue;
+          }
+
+          // Remove assignment
+          try {
+            await UserProject.findByIdAndDelete(existingAssignment._id);
+
+            // Remove user from project members
+            if (project.members.includes(user._id)) {
+              project.members = project.members.filter(memberId => 
+                memberId.toString() !== user._id.toString()
+              );
+              await project.save();
+            }
+
+            removedAssignments.push({
+              projectId: project._id,
+              projectName: project.name,
+              assignedAt: existingAssignment.assignedAt
+            });
+          } catch (e) {
+            skippedRemovals.push({ projectId, reason: 'Database error during removal' });
+          }
+        }
+
+        result = {
+          action: 'remove',
+          removedAssignments,
+          skippedRemovals,
+          summary: {
+            totalRequested: projectIds.length,
+            successfullyRemoved: removedAssignments.length,
+            skipped: skippedRemovals.length
+          }
+        };
+      }
+
+      // Return updated project list with action result
+      return res.json({
+        message: `Project ${action} completed`,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          level: user.level
+        },
+        projects: projectsWithStatus,
+        actionResult: result,
+        summary: {
+          totalProjects: allProjects.length,
+          assignedProjects: projectsWithStatus.filter(p => p.isAssigned).length,
+          unassignedProjects: projectsWithStatus.filter(p => !p.isAssigned).length
+        }
+      });
+    }
+
+    // Return just the project list with assignment status
+    res.json({
+      message: 'User projects assignment data retrieved',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      projects: projectsWithStatus,
+      summary: {
+        totalProjects: allProjects.length,
+        assignedProjects: projectsWithStatus.filter(p => p.isAssigned).length,
+        unassignedProjects: projectsWithStatus.filter(p => !p.isAssigned).length
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user projects assignment error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -1419,6 +2142,8 @@ module.exports = {
   deleteRole,
   listRoles,
   createUserWithRole,
+  createUserWithProjects,
+  getUsersWithProjects,
   editUserWithRole,
   deleteUserWithRole,
   getUserById,
@@ -1430,4 +2155,8 @@ module.exports = {
   getUserTimeline,
   getAllUsersWithHistory,
   updateSuperadminPermissions,
+  updateUserProjects,
+  deleteUserProjects,
+  assignProjectsToUser,
+  getUserProjectsAssignment,
 };
