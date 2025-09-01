@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions } = require('../controllers/superadminController');
+const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, createUserWithProjects, getUsersWithProjects, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions, updateUserProjects, deleteUserProjects, assignProjectsToUser, getUserProjectsAssignment } = require('../controllers/superadminController');
 const superadmin = require('../middleware/superadmin');
 
 // Public routes (no authentication required)
@@ -21,9 +21,17 @@ router.get('/roles', superadmin, listRoles);
 router.put('/superadmin/permissions', superadmin, updateSuperadminPermissions);
 
 router.post('/create-user', superadmin, createUserWithRole);
+router.post('/create-user-with-projects', superadmin, createUserWithProjects);
 
 // User management routes
+router.get('/users/with-projects', superadmin, getUsersWithProjects);
 router.get('/users/by-role', superadmin, getAllUsersGroupedByRole);
+
+// Update user's project assignments
+router.put('/update-user-projects', superadmin, updateUserProjects);
+router.delete('/delete-user-projects', superadmin, deleteUserProjects);
+router.post('/assign-projects-to-user', superadmin, assignProjectsToUser);
+router.get('/get-user-projects-assignment/:userId', superadmin, getUserProjectsAssignment);
 
 // Individual user management
 router.get('/users/:userId', superadmin, getUserById);
