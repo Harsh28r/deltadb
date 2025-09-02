@@ -20,6 +20,7 @@ const leadStatusRoutes = require('./routes/leadStatusRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const userReportingRoutes = require('./routes/userReportingRoutes');
 const userProjectRoutes = require('./routes/userProjectRoutes');
+const userDashboardRoutes = require('./routes/userDashboardRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -130,6 +131,7 @@ app.use('/api/lead-statuses', leadStatusRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/user-reporting', userReportingRoutes);
 app.use('/api/user-projects', userProjectRoutes);
+app.use('/api/user', userDashboardRoutes);
 
 // Basic route
 app.get('/', (req, res) => {

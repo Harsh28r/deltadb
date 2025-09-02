@@ -266,15 +266,27 @@ const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    console.log('=== LOGIN ATTEMPT ===');
+    console.log('Email:', email);
+    console.log('Password provided:', !!password);
+    
     // Find user by email
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
+      console.log('User not found');
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    console.log('User found:', user.email);
+    console.log('User password in DB:', user.password);
+    console.log('Password match attempt...');
+
     // Check password using User model's matchPassword method
-    const isMatch = await user.matchPassword(password);
+    const isMatch = user.matchPassword(password);
+    console.log('Password match result:', isMatch);
+    
     if (!isMatch) {
+      console.log('Password mismatch');
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
