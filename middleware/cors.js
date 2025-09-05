@@ -7,7 +7,7 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     
     // Allow localhost for development
-    if (origin === 'http://localhost:3000') return callback(null, true);
+    if (origin === 'http://localhost:3000' || origin === 'http://localhost:3001' || origin === 'http://localhost:3002') return callback(null, true);
     
     // Allow any vercel.app domain
     if (origin.includes('vercel.app')) return callback(null, true);
@@ -34,7 +34,7 @@ const corsOptions = {
 
 // Special CORS configuration for admin-login endpoint
 const adminLoginCorsOptions = {
-  origin: ['https://www.realtechmktg.com', 'https://realtechmktg.com', 'http://localhost:3000'],
+  origin: ['https://www.realtechmktg.com', 'https://realtechmktg.com', 'http://localhost:3000', 'http://localhost:3001'],
   credentials: true,
   methods: ['POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'Origin', 'Accept'],
