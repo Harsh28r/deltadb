@@ -39,7 +39,8 @@ const getUserDashboard = async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(5); // Latest 5 notifications
 
-    // Get role permissions
+    // Get user's actual effective permissions
+    const effectivePermissions = await user.getEffectivePermissions();
     const rolePermissions = user.roleRef ? user.roleRef.permissions || [] : [];
 
     // Dashboard statistics
@@ -63,7 +64,7 @@ const getUserDashboard = async (req, res) => {
         level: user.level,
         mobile: user.mobile,
         companyName: user.companyName,
-        permissions: rolePermissions
+        permissions: effectivePermissions
       },
       projects: userProjects.map(up => ({
         id: up.project._id,
@@ -296,7 +297,12 @@ const getUserProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Get user's actual effective permissions (including denied ones)
+    const effectivePermissions = await user.getEffectivePermissions();
     const rolePermissions = user.roleRef ? user.roleRef.permissions || [] : [];
+    
+    // Get custom permissions for reference
+    const customPermissions = user.customPermissions || { allowed: [], denied: [] };
 
     res.json({
       message: 'User profile retrieved successfully',
@@ -308,7 +314,19 @@ const getUserProfile = async (req, res) => {
         level: user.level,
         mobile: user.mobile,
         companyName: user.companyName,
-        permissions: rolePermissions,
+        // Role permissions (what the role gives - not denied)
+        rolePermissions: rolePermissions,
+        // Effective permissions (what user can actually access)
+        permissions: effectivePermissions,
+        // Denied permissions (what user cannot access)
+        deniedPermissions: customPermissions.denied,
+        // Additional permission info for debugging
+        permissionDetails: {
+          rolePermissions: rolePermissions,
+          customAllowed: customPermissions.allowed,
+          customDenied: customPermissions.denied,
+          effective: effectivePermissions
+        },
         createdAt: user.createdAt
       }
     });
@@ -357,7 +375,7 @@ const updateUserProfile = async (req, res) => {
         level: user.level,
         mobile: user.mobile,
         companyName: user.companyName,
-        permissions: rolePermissions,
+        permissions: effectivePermissions,
         createdAt: user.createdAt
       }
     });
