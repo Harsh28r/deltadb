@@ -13,7 +13,9 @@ const corsOptions = {
     if (origin.includes('vercel.app')) return callback(null, true);
     
     // Allow realtechmktg.com domain (your production domain)
-    if (origin === 'https://www.realtechmktg.com' || origin === 'https://realtechmktg.com') {
+    if (origin === 'https://www.realtechmktg.com' || 
+        origin === 'https://realtechmktg.com' || 
+        origin === 'https://user.realtechmktg.com') {
       return callback(null, true);
     }
     
@@ -52,12 +54,24 @@ const corsDebug = (req, res, next) => {
   console.log('  User-Agent:', req.headers['user-agent']);
   
   // Set CORS headers manually for critical endpoints
-  if (req.path === '/api/superadmin/admin-login') {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Origin, Accept');
-    res.header('Access-Control-Expose-Headers', 'Authorization, x-auth-token');
+  if (req.path === '/api/superadmin/admin-login' || req.path.startsWith('/api/user/')) {
+    const origin = req.headers.origin;
+    const allowedOrigins = [
+      'https://www.realtechmktg.com',
+      'https://realtechmktg.com', 
+      'https://user.realtechmktg.com',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002'
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Origin, Accept');
+      res.header('Access-Control-Expose-Headers', 'Authorization, x-auth-token');
+    }
   }
   
   next();
