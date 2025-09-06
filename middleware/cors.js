@@ -34,7 +34,7 @@ const corsOptions = {
 
 // Special CORS configuration for admin-login endpoint
 const adminLoginCorsOptions = {
-  origin: ['https://www.realtechmktg.com', 'https://realtechmktg.com', 'http://localhost:3000', 'http://localhost:3001'],
+  origin: ['https://www.realtechmktg.com', 'https://realtechmktg.com', 'http://localhost:3000', 'http://localhost:3001','https://user.realtechmktg.com'],
   credentials: true,
   methods: ['POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'Origin', 'Accept'],

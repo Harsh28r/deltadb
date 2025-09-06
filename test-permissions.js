@@ -170,3 +170,4 @@ if (require.main === module) {
 }
 
 module.exports = { testPermissionSystem };
+
