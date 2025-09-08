@@ -6,17 +6,24 @@ const relationshipSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
   teamType: Joi.string().valid('project', 'global', 'superadmin', 'custom').required(),
   projectId: Joi.string().hex().length(24).when('teamType', { is: 'project', then: Joi.required() }),
-  context: Joi.string().allow('')
+  context: Joi.string().allow('').optional()
 });
 
 const createReportingSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
-  reportsTo: Joi.array().items(relationshipSchema).min(1).required()
+  reportsTo: Joi.array().items(relationshipSchema).optional()
 });
 
 const updateReportingSchema = Joi.object({
-  reportsTo: Joi.array().items(relationshipSchema).min(1)
+  reportsTo: Joi.array().items(relationshipSchema).optional()
 });
+
+const generatePath = async (userId) => {
+  const parentReporting = await UserReporting.findOne({ user: userId });
+  return parentReporting && parentReporting.reportsTo.length > 0 && parentReporting.reportsTo[0].path
+    ? `${parentReporting.reportsTo[0].path}${userId}/`
+    : `/${userId}/`;
+};
 
 const createReporting = async (req, res) => {
   const { error } = createReportingSchema.validate(req.body);
@@ -28,17 +35,19 @@ const createReporting = async (req, res) => {
 
     const reporting = new UserReporting({
       user: req.body.userId,
-      reportsTo: req.body.reportsTo.map(r => ({
+      reportsTo: req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
         user: r.userId,
         teamType: r.teamType,
         project: r.projectId,
-        context: r.context
-      })),
+        context: r.context || '',
+        path: await generatePath(r.userId)
+      }))) : [],
       level: user.level
     });
     await reporting.save();
     res.status(201).json(reporting);
   } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ message: 'Duplicate reporting relationship' });
     res.status(500).json({ message: err.message });
   }
 };
@@ -46,7 +55,6 @@ const createReporting = async (req, res) => {
 const getHierarchy = async (req, res) => {
   const { userId } = req.params;
   try {
-    // Fetch all users reporting to userId (directly or indirectly)
     const subordinates = await UserReporting.find({
       'reportsTo.path': { $regex: `^/${userId}/` }
     }).populate('user reportsTo.user reportsTo.project');
@@ -65,15 +73,17 @@ const updateReporting = async (req, res) => {
     const reporting = await UserReporting.findById(id);
     if (!reporting) return res.status(404).json({ message: 'Reporting not found' });
 
-    reporting.reportsTo = req.body.reportsTo.map(r => ({
+    reporting.reportsTo = req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
       user: r.userId,
       teamType: r.teamType,
       project: r.projectId,
-      context: r.context
-    }));
+      context: r.context || '',
+      path: await generatePath(r.userId)
+    }))) : [];
     await reporting.save();
     res.json(reporting);
   } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ message: 'Duplicate reporting relationship' });
     res.status(500).json({ message: err.message });
   }
 };
