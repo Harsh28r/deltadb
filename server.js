@@ -22,6 +22,7 @@ const userReportingRoutes = require('./routes/userReportingRoutes');
 const userProjectRoutes = require('./routes/userProjectRoutes');
 const userDashboardRoutes = require('./routes/userDashboardRoutes');
 const permissionRoutes = require('./routes/permissionRoutes');
+const initLeadSource = require('./scripts/initLeadSource');
 
 const app = express();
 const server = http.createServer(app);
@@ -221,13 +222,16 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 const startServer = () => {
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log('MongoDB connection status:', isMongoConnected);
-    if (!isMongoConnected) {
-      console.log('Warning: Server started without MongoDB connection');
-    }
-  });
+  if (isMongoConnected) {
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log('MongoDB connection status:', isMongoConnected);
+      initLeadSource();
+    });
+  } else {
+    console.log('Waiting for MongoDB connection...');
+    setTimeout(startServer, 2000);
+  }
 };
 
 // Start MongoDB connection
