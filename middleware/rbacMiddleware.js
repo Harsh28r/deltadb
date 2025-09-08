@@ -1,42 +1,69 @@
 const Role = require('../models/Role');
 const User = require('../models/User');
+const UserReporting = require('../models/UserReporting');
 
 const checkPermission = (permission) => async (req, res, next) => {
-    try {
-      // For now, allow all authenticated users to pass
-      // You can implement proper permission checking later
-      if (!req.user) {
-        return res.status(401).json({ message: 'Authentication required' });
-      }
-      next();
-    } catch (err) {
-      res.status(500).json({ message: 'Server error' });
+  try {
+    const role = await Role.findById(req.user.roleRef);
+    if (!role || !role.permissions.includes(permission)) {
+      return res.status(403).json({ message: 'Forbidden: Missing permission' });
     }
-  };
+    next();
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 
-// For hierarchy, example: check if target user reports to req.user or same level
 const checkHierarchy = async (req, res, next) => {
-    try {
-        // Implement logic based on reportingTo chain
-        // For simplicity, assume super admin can, others only if same team or reporting
-        const targetUserId = req.user.id || req.params.userId;
-        if (!targetUserId) return next(); // No target user, skip check
-
-        const targetUser = await User.findById(targetUserId).populate('roleRef');
-        if (!targetUser) return res.status(404).json({ message: 'Target user not found' });
-
-        const userRole = await Role.findById(req.user.roleRef);
-        const targetRole = await Role.findById(targetUser.roleRef);
-
-        // Superadmin bypasses hierarchy
-        if (userRole && (userRole.name.toLowerCase() === 'superadmin' || userRole.level === 1)) {
-            return next();
-        }
-
-        next(); // Placeholder, implement as needed
-    } catch (err) {
-        res.status(500).json({ message: 'Server error in check Hierarchy'});
+  try {
+    // Extract targetUserId from possible sources
+    const targetUserId = req.params.userId || req.body.userId || req.user.id;
+    if (!targetUserId) {
+      return res.status(400).json({ message: 'Target user ID not provided' });
     }
+
+    // Get requesting user's role
+    const userRole = await Role.findById(req.user.roleRef);
+    if (!userRole) {
+      return res.status(403).json({ message: 'Requesting user role not found' });
+    }
+
+    // Superadmin bypasses hierarchy
+    if (userRole.name.toLowerCase() === 'superadmin' || userRole.level === 1) {
+      return next();
+    }
+
+    // Get target user and their role
+    const targetUser = await User.findById(targetUserId).populate('roleRef');
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Target user not found' });
+    }
+
+    // Allow self-access
+    if (req.user.id === targetUserId) {
+      return next();
+    }
+
+    // Check if target user reports to requesting user
+    const targetReporting = await UserReporting.findOne({ user: targetUserId });
+    if (!targetReporting) {
+      return res.status(403).json({ message: 'Forbidden: Target user has no reporting record' });
+    }
+
+    // Check if requesting user's ID is in any of the target user's reportsTo paths
+    const isSubordinate = targetReporting.reportsTo.some(relation => 
+      relation.path && relation.path.includes(`/${req.user.id}/`)
+    );
+
+    if (!isSubordinate) {
+      return res.status(403).json({ message: 'Forbidden: Target user is not a subordinate' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('Error in checkHierarchy:', err.message);
+    res.status(500).json({ message: 'Server error in checkHierarchy' });
+  }
 };
 
 module.exports = { checkPermission, checkHierarchy };

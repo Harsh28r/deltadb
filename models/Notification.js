@@ -6,7 +6,7 @@ const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   status: { type: String, enum: ['sent', 'read', 'failed'], default: 'sent' },
   relatedEntity: {
-    type: { type: String, enum: ['lead', 'task', 'target', 'other'] },
+    type: { type: String },
     id: { type: mongoose.Schema.Types.ObjectId }
   },
   timestamp: { type: Date, default: Date.now }
