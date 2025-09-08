@@ -55,9 +55,18 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 userSchema.methods.hasPermission = async function (permission) {
   const Role = require('./Role');
   
-  // Superadmin always has all permissions
+  // Get role permissions first
+  const roleDef = await Role.findOne({ name: this.role });
+  const rolePermissions = roleDef?.permissions || [];
+  
+  // Superadmin has all role permissions (unless explicitly denied)
   if (this.role === 'superadmin' || this.level === 1) {
-    return true;
+    // Check if permission is explicitly denied
+    if (this.customPermissions?.denied?.includes(permission.toLowerCase())) {
+      return false;
+    }
+    // Check if permission is in role permissions
+    return rolePermissions.includes(permission.toLowerCase());
   }
   
   // Check if permission is explicitly denied
@@ -71,7 +80,6 @@ userSchema.methods.hasPermission = async function (permission) {
   }
   
   // Check role permissions
-  const roleDef = await Role.findOne({ name: this.role });
   if (roleDef?.permissions?.includes(permission.toLowerCase())) {
     return true;
   }
@@ -105,14 +113,30 @@ userSchema.methods.getEffectivePermissions = async function () {
   try {
     const Role = require('./Role');
     
-    // Superadmin has all permissions
-    if (this.role === 'superadmin' || this.level === 1) {
-      return ['*']; // All permissions
-    }
-    
-    // Get role permissions
+    // Get role permissions first
     const roleDef = await Role.findOne({ name: this.role });
     const rolePermissions = roleDef?.permissions || [];
+    
+    // Superadmin gets all role permissions plus any custom ones
+    if (this.role === 'superadmin' || this.level === 1) {
+      // Start with role permissions
+      let effectivePermissions = [...rolePermissions];
+      
+      // Add custom allowed permissions
+      if (this.customPermissions?.allowed && Array.isArray(this.customPermissions.allowed)) {
+        effectivePermissions = [...effectivePermissions, ...this.customPermissions.allowed];
+      }
+      
+      // Remove denied permissions
+      if (this.customPermissions?.denied && Array.isArray(this.customPermissions.denied)) {
+        effectivePermissions = effectivePermissions.filter(
+          perm => !this.customPermissions.denied.includes(perm)
+        );
+      }
+      
+      // Remove duplicates and filter out any undefined/null values
+      return [...new Set(effectivePermissions.filter(perm => perm && typeof perm === 'string'))];
+    }
     
     // Start with role permissions
     let effectivePermissions = [...rolePermissions];
