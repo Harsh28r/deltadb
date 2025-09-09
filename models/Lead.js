@@ -3,7 +3,7 @@ const Role = require('./Role');
 
 const leadSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true  },
+  project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true},
   channelPartner: { type: mongoose.Schema.Types.ObjectId, ref: 'CpSource' },
   leadSource: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadSource', required: true },
   currentStatus: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadStatus', required: true },

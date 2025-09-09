@@ -3,10 +3,11 @@ const { logLeadActivity } = require('./leadActivityController');
 // const { sendNotification } = require('./notificationController');
 const Joi = require('joi');
 const mongoose = require('mongoose');
+const LeadActivity = require('../models/LeadActivity');
 
 const createLeadSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
-  project: Joi.string().hex().length(24).optional(),
+  project: Joi.string().hex().length(24).required(),
   channelPartner: Joi.string().hex().length(24).optional(),
   leadSource: Joi.string().hex().length(24).required(),
   currentStatus: Joi.string().hex().length(24).required(),
@@ -28,9 +29,9 @@ const changeStatusSchema = Joi.object({
 const bulkTransferLeadsSchema = Joi.object({
   fromUser: Joi.string().hex().length(24).required(),
   toUser: Joi.string().hex().length(24).required(),
-  leadIds: Joi.array().items(Joi.string().hex().length(24)).required(),
+  leadIds: Joi.array().items(Joi.string().hex().length(24)).min(1).required(),
   projectId: Joi.string().hex().length(24).optional()
-});
+}).unknown(true);
 
 const createLead = async (req, res) => {
   const { error } = createLeadSchema.validate(req.body);
@@ -49,8 +50,6 @@ const createLead = async (req, res) => {
 
     await logLeadActivity(lead._id, req.user._id, 'created', { data: req.body });
     // await sendNotification(lead.user, 'in-app', `New lead assigned: ${lead._id}`, { type: 'lead', id: lead._id });
-
-  
 
     res.status(201).json(lead);
   } catch (err) {
@@ -103,7 +102,31 @@ const editLead = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+const getLeadById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const lead = await Lead.findById(id)
+      .populate('user', 'name email')
+      .populate('project', 'name')
+      .populate('channelPartner', 'name')
+      .populate('leadSource', 'name')
+      .populate('currentStatus', 'name formFields is_final_status')
+      .populate({
+        path: 'statusHistory.status',
+        select: 'name formFields is_final_status'
+      });
 
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+
+    const activities = await LeadActivity.find({ lead: id })
+      .sort({ timestamp: -1 })
+      .populate('user', 'name email');
+
+    res.json({ lead, activities });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 const deleteLead = async (req, res) => {
   const { id } = req.params;
   try {
@@ -148,12 +171,16 @@ const bulkTransferLeads = async (req, res) => {
   if (error) return res.status(400).json({ message: error.details[0].message });
 
   const { fromUser, toUser, leadIds, projectId } = req.body;
-  if (fromUser === toUser) return res.status(400).json({ message: 'Cannot transfer to the same user' });
 
   const query = { _id: { $in: leadIds }, user: fromUser };
-  if (projectId) query.project = projectId;
 
   try {
+    // Validate projectId if provided
+    if (projectId) {
+      const project = await mongoose.model('Project').findById(projectId);
+      if (!project) return res.status(400).json({ message: 'Invalid projectId' });
+    }
+
     const leads = await Lead.find(query).populate('currentStatus');
     if (leads.length === 0) return res.status(404).json({ message: 'No matching leads found' });
 
@@ -164,10 +191,21 @@ const bulkTransferLeads = async (req, res) => {
       }
     }
 
-    const result = await Lead.updateMany(query, { $set: { user: toUser } });
+    const update = { $set: { user: toUser } };
+    if (projectId) update.$set.project = projectId;
+
+    const result = await Lead.updateMany(query, update);
     for (const lead of leads) {
-      await logLeadActivity(lead._id, req.user._id, 'transferred', { fromUser, toUser, projectId });
-      // await sendNotification(toUser, 'in-app', `Lead ${lead._id} transferred to you`, { type: 'lead', id: lead._id });
+      await logLeadActivity(lead._id, req.user._id, 'transferred', {
+        fromUser,
+        toUser,
+        oldProject: lead.project?.toString(),
+        newProject: projectId
+      });
+      // Only send notification if toUser is different from fromUser
+      // if (fromUser !== toUser) {
+      //   await sendNotification(toUser, 'in-app', `Lead ${lead._id} transferred to you`, { type: 'lead', id: lead._id });
+      // }
     }
 
     res.json({ message: 'Leads transferred', modifiedCount: result.modifiedCount });
@@ -197,7 +235,6 @@ const bulkUploadLeads = async (req, res) => {
           for (const lead of leads) {
             await logLeadActivity(lead._id, req.user._id, 'created', { data: lead.toObject() });
             // await sendNotification(lead.user, 'in-app', `New lead assigned: ${lead._id}`, { type: 'lead', id: lead._id });
-           
           }
           fs.unlinkSync(req.file.path);
           res.json({ message: 'Bulk upload successful', count: leads.length });
@@ -240,5 +277,6 @@ module.exports = {
   changeLeadStatus,
   bulkUploadLeads: require('multer')({ dest: 'uploads/' }).single('file'),
   bulkTransferLeads,
-  bulkDeleteLeads
+  bulkDeleteLeads,
+  getLeadById
 };

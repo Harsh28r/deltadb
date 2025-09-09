@@ -11,9 +11,11 @@ const {
 
 const router = express.Router();
 
+router.get('/', auth, checkPermission('lead-activities:read'), superadmin, getLeadActivities);
 router.get('/:leadId', auth, checkPermission('lead-activities:read'), getLeadActivities);
-router.get('/:leadId/history', auth, superadmin, getLeadHistory);
-router.post('/bulk-update', auth, checkPermission('lead-activities:bulk-update'), bulkUpdateLeadActivities);
-router.post('/bulk-delete', auth, checkPermission('lead-activities:bulk-delete'), bulkDeleteLeadActivities);
+router.get('/:leadId/history', auth, checkPermission('lead-activities:read'), superadmin, getLeadHistory);
+router.get('/history', auth, checkPermission('lead-activities:read'), superadmin, getLeadHistory);
+router.post('/bulk-update', auth, checkPermission('lead-activities:bulk-update'), superadmin, bulkUpdateLeadActivities);
+router.post('/bulk-delete', auth, checkPermission('lead-activities:bulk-delete'), superadmin, bulkDeleteLeadActivities);
 
 module.exports = router;
