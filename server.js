@@ -18,11 +18,13 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const leadSourceRoutes = require('./routes/leadSourceRoutes');
 const leadStatusRoutes = require('./routes/leadStatusRoutes');
 const leadRoutes = require('./routes/leadRoutes');
+const leadActivityRoutes = require('./routes/leadActivityRoutes');
 const userReportingRoutes = require('./routes/userReportingRoutes');
 const userProjectRoutes = require('./routes/userProjectRoutes');
 const userDashboardRoutes = require('./routes/userDashboardRoutes');
 const permissionRoutes = require('./routes/permissionRoutes');
 const initLeadSource = require('./scripts/initLeadSource');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +51,8 @@ app.use(bodyParser.json());
 
 // MongoDB connection stringhudugbdrr
 const MONGO_URI =  'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+
+// const MONGO_URI = "mongodb://localhost:27017/deltadb1"
 
 // Log MongoDB URI
 console.log('MONGO_URI:', MONGO_URI);
@@ -131,6 +135,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/lead-sources', leadSourceRoutes);
 app.use('/api/lead-statuses', leadStatusRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/lead-activities', leadActivityRoutes);
 app.use('/api/user-reporting', userReportingRoutes);
 app.use('/api/user-projects', userProjectRoutes);
 app.use('/api/user', userDashboardRoutes);

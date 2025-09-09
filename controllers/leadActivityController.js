@@ -12,7 +12,8 @@ const logLeadActivity = async (leadId, userId, action, details) => {
 const getLeadActivities = async (req, res) => {
   const { leadId } = req.params;
   try {
-    const activities = await LeadActivity.find({ lead: leadId })
+    const query = leadId ? { lead: leadId } : {};
+    const activities = await LeadActivity.find(query)
       .sort({ timestamp: -1 })
       .populate('user', 'name email')
       .populate('lead', 'currentStatus');
@@ -25,7 +26,8 @@ const getLeadActivities = async (req, res) => {
 const getLeadHistory = async (req, res) => {
   const { leadId } = req.params;
   try {
-    const activities = await LeadActivity.find({ lead: leadId })
+    const query = leadId ? { lead: leadId } : {};
+    const activities = await LeadActivity.find(query)
       .sort({ timestamp: -1 })
       .populate('user', 'name email')
       .populate({
