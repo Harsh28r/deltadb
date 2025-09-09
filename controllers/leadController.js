@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 
 const createLeadSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
-  project: Joi.string().hex().length(24).optional(),
+  project: Joi.string().hex().length(24).required(),
   channelPartner: Joi.string().hex().length(24).optional(),
   leadSource: Joi.string().hex().length(24).required(),
   currentStatus: Joi.string().hex().length(24).required(),
@@ -49,9 +49,6 @@ const createLead = async (req, res) => {
 
     await logLeadActivity(lead._id, req.user._id, 'created', { data: req.body });
     // await sendNotification(lead.user, 'in-app', `New lead assigned: ${lead._id}`, { type: 'lead', id: lead._id });
-
-    const leadScore = new LeadScore({ lead: lead._id, rules: [] });
-    await leadScore.save();
 
     res.status(201).json(lead);
   } catch (err) {
@@ -198,8 +195,6 @@ const bulkUploadLeads = async (req, res) => {
           for (const lead of leads) {
             await logLeadActivity(lead._id, req.user._id, 'created', { data: lead.toObject() });
             // await sendNotification(lead.user, 'in-app', `New lead assigned: ${lead._id}`, { type: 'lead', id: lead._id });
-            const leadScore = new LeadScore({ lead: lead._id, rules: [] });
-            await leadScore.save();
           }
           fs.unlinkSync(req.file.path);
           res.json({ message: 'Bulk upload successful', count: leads.length });

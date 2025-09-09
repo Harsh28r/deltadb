@@ -4,6 +4,11 @@ const UserReporting = require('../models/UserReporting');
 
 const checkPermission = (permission) => async (req, res, next) => {
   try {
+    // Allow superadmin to bypass all permission checks
+    if (req.user.role === 'superadmin' || req.user.level === 1) {
+      return next();
+    }
+    
     const role = await Role.findById(req.user.roleRef);
     if (!role || !role.permissions.includes(permission)) {
       return res.status(403).json({ message: 'Forbidden: Missing permission' });
@@ -16,6 +21,11 @@ const checkPermission = (permission) => async (req, res, next) => {
 
 const checkHierarchy = async (req, res, next) => {
   try {
+    // Allow superadmin to bypass all hierarchy checks
+    if (req.user.role === 'superadmin' || req.user.level === 1) {
+      return next();
+    }
+
     // Extract targetUserId from possible sources
     const targetUserId = req.params.userId || req.body.userId || req.user.id;
     if (!targetUserId) {
@@ -26,11 +36,6 @@ const checkHierarchy = async (req, res, next) => {
     const userRole = await Role.findById(req.user.roleRef);
     if (!userRole) {
       return res.status(403).json({ message: 'Requesting user role not found' });
-    }
-
-    // Superadmin bypasses hierarchy
-    if (userRole.name.toLowerCase() === 'superadmin' || userRole.level === 1) {
-      return next();
     }
 
     // Get target user and their role
