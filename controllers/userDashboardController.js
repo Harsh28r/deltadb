@@ -8,18 +8,39 @@ const Notification = require('../models/Notification');
 // Get user dashboard data
 const getUserDashboard = async (req, res) => {
   try {
+    console.log('🔍 getUserDashboard - User ID:', req.user.id);
+    console.log('🔍 getUserDashboard - User details:', req.user);
+    
     const userId = req.user.id;
     
     // Get user details with role information
     const user = await User.findById(userId).populate('roleRef');
     if (!user) {
+      console.log('❌ User not found for ID:', userId);
       return res.status(404).json({ message: 'User not found' });
     }
 
+    console.log('🔍 Found user:', {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      level: user.level
+    });
+
     // Get user's assigned projects
+    console.log('🔍 Looking for user projects with userId:', userId);
     const userProjects = await UserProject.find({ user: userId })
       .populate('project')
       .populate('user');
+    
+    console.log('🔍 Found user projects count:', userProjects.length);
+    console.log('🔍 User projects details:', userProjects.map(up => ({
+      id: up._id,
+      user: up.user?._id,
+      project: up.project?._id,
+      projectName: up.project?.name
+    })));
 
     // Get user's leads (leads assigned to this user)
     const userLeads = await Lead.find({ user: userId })
