@@ -1,9 +1,12 @@
+
+
 const express = require('express');
 const auth = require('../middleware/auth');
 const { checkPermission, checkHierarchy } = require('../middleware/rbacMiddleware');
 const {
   createLead,
   getLeads,
+  getLeadById,
   editLead,
   deleteLead,
   changeLeadStatus,
@@ -19,6 +22,7 @@ router.post('/', auth, checkPermission('leads:create'), createLead);
 
 // Get all leads (with optional projectId filter)
 router.get('/', auth, checkPermission('leads:read'), getLeads);
+router.get('/:id', auth, checkPermission('leads:read'), getLeadById);
 router.put('/:id', auth, checkPermission('leads:update'), checkHierarchy, editLead);
 router.delete('/:id', auth, checkPermission('leads:delete'), checkHierarchy, deleteLead);
 router.put('/:id/status', auth, checkPermission('leads:update'), checkHierarchy, changeLeadStatus);
