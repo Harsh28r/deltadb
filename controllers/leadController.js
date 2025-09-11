@@ -1,9 +1,9 @@
 const Lead = require('../models/Lead');
 const { logLeadActivity } = require('./leadActivityController');
 // const { sendNotification } = require('./notificationController');
+const LeadActivity = require('../models/LeadActivity');
 const Joi = require('joi');
 const mongoose = require('mongoose');
-const LeadActivity = require('../models/LeadActivity');
 
 const createLeadSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
@@ -38,25 +38,41 @@ const createLead = async (req, res) => {
   if (error) return res.status(400).json({ message: error.details[0].message });
 
   try {
+    console.log('createLead - req.body:', JSON.stringify(req.body));
+    console.log('createLead - req.user:', JSON.stringify(req.user));
+
+    // Fetch the default LeadStatus
+    const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true });
+    if (!defaultStatus) {
+      return res.status(400).json({ message: 'No default lead status found' });
+    }
+
+    // Validate provided currentStatus (if any) matches the default status
+    if (req.body.currentStatus && req.body.currentStatus !== defaultStatus._id.toString()) {
+      return res.status(400).json({ message: 'Provided status must be the default status' });
+    }
+
     const lead = new Lead({
       user: req.body.userId,
       project: req.body.project,
       channelPartner: req.body.channelPartner,
       leadSource: req.body.leadSource,
-      currentStatus: req.body.currentStatus,
+      currentStatus: defaultStatus._id, // Always use default status
       customData: req.body.customData || {}
     });
     await lead.save();
 
-    await logLeadActivity(lead._id, req.user._id, 'created', { data: req.body });
+    await logLeadActivity(lead._id, req.user._id, 'created', { data: { ...req.body, currentStatus: defaultStatus._id.toString() } });
     // await sendNotification(lead.user, 'in-app', `New lead assigned: ${lead._id}`, { type: 'lead', id: lead._id });
 
-    res.status(201).json(lead);
+    res.status(201).json(lead.toObject());
   } catch (err) {
+    console.error('createLead - Error:', err);
     res.status(500).json({ message: err.message });
   }
 };
 
+// Other functions remain unchanged
 const getLeads = async (req, res) => {
   try {
     const query = {};
@@ -71,6 +87,32 @@ const getLeads = async (req, res) => {
       .populate('leadSource', 'name')
       .populate('currentStatus', 'name formFields is_final_status');
     res.json(leads);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getLeadById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const lead = await Lead.findById(id)
+      .populate('user', 'name email')
+      .populate('project', 'name')
+      .populate('channelPartner', 'name')
+      .populate('leadSource', 'name')
+      .populate('currentStatus', 'name formFields is_final_status')
+      .populate({
+        path: 'statusHistory.status',
+        select: 'name formFields is_final_status'
+      });
+
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+
+    const activities = await LeadActivity.find({ lead: id })
+      .sort({ timestamp: -1 })
+      .populate('user', 'name email');
+
+    res.json({ lead, activities });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -102,31 +144,7 @@ const editLead = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-const getLeadById = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const lead = await Lead.findById(id)
-      .populate('user', 'name email')
-      .populate('project', 'name')
-      .populate('channelPartner', 'name')
-      .populate('leadSource', 'name')
-      .populate('currentStatus', 'name formFields is_final_status')
-      .populate({
-        path: 'statusHistory.status',
-        select: 'name formFields is_final_status'
-      });
 
-    if (!lead) return res.status(404).json({ message: 'Lead not found' });
-
-    const activities = await LeadActivity.find({ lead: id })
-      .sort({ timestamp: -1 })
-      .populate('user', 'name email');
-
-    res.json({ lead, activities });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
 const deleteLead = async (req, res) => {
   const { id } = req.params;
   try {
@@ -224,12 +242,16 @@ const bulkUploadLeads = async (req, res) => {
       .on('data', (data) => results.push(data))
       .on('end', async () => {
         try {
+          const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true });
+          if (!defaultStatus) {
+            return res.status(400).json({ message: 'No default lead status found' });
+          }
           const leads = await Lead.insertMany(results.map(row => ({
             user: row.userId,
             project: row.projectId || undefined,
             channelPartner: row.channelPartnerId || undefined,
             leadSource: row.leadSourceId,
-            currentStatus: row.currentStatusId,
+            currentStatus: defaultStatus._id, // Use default status
             customData: row.customData ? JSON.parse(row.customData) : {}
           })));
           for (const lead of leads) {
@@ -272,11 +294,11 @@ const bulkDeleteLeads = async (req, res) => {
 module.exports = {
   createLead,
   getLeads,
+  getLeadById,
   editLead,
   deleteLead,
   changeLeadStatus,
   bulkUploadLeads: require('multer')({ dest: 'uploads/' }).single('file'),
   bulkTransferLeads,
-  bulkDeleteLeads,
-  getLeadById
+  bulkDeleteLeads
 };
