@@ -21,7 +21,7 @@ const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     console.log('Uploaded file MIME type:', file.mimetype);
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.mimetype)) {
       console.log('File rejected - Not an image:', file.originalname);
       return cb(new Error('File is not an image. Allowed types: jpeg, png, gif, webp'), false);
