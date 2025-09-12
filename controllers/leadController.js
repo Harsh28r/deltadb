@@ -1,4 +1,6 @@
 const Lead = require('../models/Lead');
+const ChannelPartner = require('../models/ChannelPartner');
+const CPSourcing = require('../models/CPSourcing');
 const { logLeadActivity } = require('./leadActivityController');
 // const { sendNotification } = require('./notificationController');
 const LeadActivity = require('../models/LeadActivity');
@@ -11,14 +13,16 @@ const createLeadSchema = Joi.object({
   channelPartner: Joi.string().hex().length(24).optional(),
   leadSource: Joi.string().hex().length(24).required(),
   currentStatus: Joi.string().hex().length(24).required(),
-  customData: Joi.object().optional()
+  customData: Joi.object().optional(),
+  cpSourcingId: Joi.string().hex().length(24).optional()
 });
 
 const editLeadSchema = Joi.object({
   project: Joi.string().hex().length(24).optional(),
   channelPartner: Joi.string().hex().length(24).optional(),
   leadSource: Joi.string().hex().length(24).optional(),
-  customData: Joi.object().optional()
+  customData: Joi.object().optional(),
+  cpSourcingId: Joi.string().hex().length(24).optional()
 });
 
 const changeStatusSchema = Joi.object({
@@ -39,17 +43,26 @@ const createLead = async (req, res) => {
 
   try {
     console.log('createLead - req.body:', JSON.stringify(req.body));
-    console.log('createLead - req.user:', JSON.stringify(req.user));
-
-    // Fetch the default LeadStatus
+    // Fetch default status
     const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true });
-    if (!defaultStatus) {
-      return res.status(400).json({ message: 'No default lead status found' });
-    }
+    if (!defaultStatus) return res.status(400).json({ message: 'No default lead status found' });
 
-    // Validate provided currentStatus (if any) matches the default status
     if (req.body.currentStatus && req.body.currentStatus !== defaultStatus._id.toString()) {
       return res.status(400).json({ message: 'Provided status must be the default status' });
+    }
+
+    // Validate channelPartner and cpSourcingId
+    if (req.body.channelPartner) {
+      const channelPartner = await ChannelPartner.findById(req.body.channelPartner);
+      if (!channelPartner) {
+        return res.status(400).json({ message: 'Invalid channel partner' });
+      }
+      if (req.body.cpSourcingId) {
+        const cpSourcing = await CPSourcing.findById(req.body.cpSourcingId);
+        if (!cpSourcing || !cpSourcing.channelPartnerId.equals(req.body.channelPartner) || !cpSourcing.projectId.equals(req.body.project)) {
+          return res.status(400).json({ message: 'Invalid cpSourcingId for channel partner or project' });
+        }
+      }
     }
 
     const lead = new Lead({
@@ -57,15 +70,23 @@ const createLead = async (req, res) => {
       project: req.body.project,
       channelPartner: req.body.channelPartner,
       leadSource: req.body.leadSource,
-      currentStatus: defaultStatus._id, // Always use default status
-      customData: req.body.customData || {}
+      currentStatus: defaultStatus._id,
+      customData: req.body.customData || {},
+      cpSourcingId: req.body.cpSourcingId
     });
     await lead.save();
 
-    await logLeadActivity(lead._id, req.user._id, 'created', { data: { ...req.body, currentStatus: defaultStatus._id.toString() } });
-    // await sendNotification(lead.user, 'in-app', `New lead assigned: ${lead._id}`, { type: 'lead', id: lead._id });
+    // Activate ChannelPartner and CPSourcing if leadSource is 'Channel Partner'
+    const leadSource = await mongoose.model('LeadSource').findById(req.body.leadSource);
+    if (leadSource.name.toLowerCase() === 'channel partner' && req.body.channelPartner) {
+      await ChannelPartner.findByIdAndUpdate(req.body.channelPartner, { isActive: true });
+      if (req.body.cpSourcingId) {
+        await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
+      }
+    }
 
-    res.status(201).json(lead.toObject());
+    await logLeadActivity(lead._id, req.user._id, 'created', { data: { ...req.body, currentStatus: defaultStatus._id.toString() } });
+    res.status(201).json(lead);
   } catch (err) {
     console.error('createLead - Error:', err);
     res.status(500).json({ message: err.message });
@@ -124,7 +145,7 @@ const editLead = async (req, res) => {
   if (error) return res.status(400).json({ message: error.details[0].message });
 
   try {
-    const lead = await Lead.findById(id).populate('currentStatus');
+    const lead = await Lead.findById(id).populate('currentStatus').populate('leadSource');
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
     const role = await mongoose.model('Role').findById(req.user.roleRef);
@@ -132,15 +153,36 @@ const editLead = async (req, res) => {
       return res.status(403).json({ message: 'Only superadmin can edit a lead with final status' });
     }
 
+    // Validate channelPartner and cpSourcingId
+    if (req.body.channelPartner) {
+      const channelPartner = await ChannelPartner.findById(req.body.channelPartner);
+      if (!channelPartner) {
+        return res.status(400).json({ message: 'Invalid channel partner' });
+      }
+      if (req.body.cpSourcingId) {
+        const cpSourcing = await CPSourcing.findById(req.body.cpSourcingId);
+        if (!cpSourcing || !cpSourcing.channelPartnerId.equals(req.body.channelPartner) || !cpSourcing.projectId.equals(req.body.project || lead.project)) {
+          return res.status(400).json({ message: 'Invalid cpSourcingId for channel partner or project' });
+        }
+      }
+    }
+
     const oldData = { ...lead.toObject() };
     Object.assign(lead, req.body);
-    await lead.save({ context: { userId: req.user } });
+    await lead.save();
+
+    // Activate ChannelPartner and CPSourcing if leadSource is 'Channel Partner'
+    if (lead.leadSource.name.toLowerCase() === 'channel partner' && lead.channelPartner) {
+      await ChannelPartner.findByIdAndUpdate(lead.channelPartner, { isActive: true });
+      if (req.body.cpSourcingId) {
+        await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
+      }
+    }
 
     await logLeadActivity(lead._id, req.user._id, 'updated', { oldData, newData: req.body });
-    // await sendNotification(lead.user, 'in-app', `Lead ${lead._id} updated`, { type: 'lead', id: lead._id });
-
     res.json(lead);
   } catch (err) {
+    console.error('editLead - Error:', err);
     res.status(500).json({ message: err.message });
   }
 };
