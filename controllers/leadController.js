@@ -43,7 +43,6 @@ const createLead = async (req, res) => {
 
   try {
     console.log('createLead - req.body:', JSON.stringify(req.body));
-    // Fetch default status
     const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true });
     if (!defaultStatus) return res.status(400).json({ message: 'No default lead status found' });
 
@@ -51,7 +50,6 @@ const createLead = async (req, res) => {
       return res.status(400).json({ message: 'Provided status must be the default status' });
     }
 
-    // Validate channelPartner and cpSourcingId
     if (req.body.channelPartner) {
       const channelPartner = await ChannelPartner.findById(req.body.channelPartner);
       if (!channelPartner) {
@@ -76,13 +74,12 @@ const createLead = async (req, res) => {
     });
     await lead.save();
 
-    // Activate ChannelPartner and CPSourcing if leadSource is 'Channel Partner'
-    const leadSource = await mongoose.model('LeadSource').findById(req.body.leadSource);
-    if (leadSource.name.toLowerCase() === 'channel partner' && req.body.channelPartner) {
+    // Update isActive for ChannelPartner and CPSourcing
+    if (req.body.channelPartner) {
       await ChannelPartner.findByIdAndUpdate(req.body.channelPartner, { isActive: true });
-      if (req.body.cpSourcingId) {
-        await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
-      }
+    }
+    if (req.body.cpSourcingId) {
+      await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
     }
 
     await logLeadActivity(lead._id, req.user._id, 'created', { data: { ...req.body, currentStatus: defaultStatus._id.toString() } });
@@ -153,7 +150,6 @@ const editLead = async (req, res) => {
       return res.status(403).json({ message: 'Only superadmin can edit a lead with final status' });
     }
 
-    // Validate channelPartner and cpSourcingId
     if (req.body.channelPartner) {
       const channelPartner = await ChannelPartner.findById(req.body.channelPartner);
       if (!channelPartner) {
@@ -171,12 +167,12 @@ const editLead = async (req, res) => {
     Object.assign(lead, req.body);
     await lead.save();
 
-    // Activate ChannelPartner and CPSourcing if leadSource is 'Channel Partner'
-    if (lead.leadSource.name.toLowerCase() === 'channel partner' && lead.channelPartner) {
+    // Update isActive for ChannelPartner and CPSourcing
+    if (lead.channelPartner) {
       await ChannelPartner.findByIdAndUpdate(lead.channelPartner, { isActive: true });
-      if (req.body.cpSourcingId) {
-        await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
-      }
+    }
+    if (lead.cpSourcingId) {
+      await CPSourcing.findByIdAndUpdate(lead.cpSourcingId, { isActive: true });
     }
 
     await logLeadActivity(lead._id, req.user._id, 'updated', { oldData, newData: req.body });
@@ -186,6 +182,7 @@ const editLead = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 const deleteLead = async (req, res) => {
   const { id } = req.params;

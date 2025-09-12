@@ -31,10 +31,8 @@ const createChannelPartnerSchema = Joi.object({
   location: Joi.string().required().trim(),
   address: Joi.string().required().trim(),
   mahareraNo: Joi.string().min(5).max(50).trim().optional(),
-//   mahareraNo: Joi.string().required().min(5).max(50).trim(),
   pinCode: Joi.string().required().length(6).pattern(/^\d{6}$/),
-  customData: Joi.object().optional(),
-  isActive: Joi.boolean().default(false)
+  customData: Joi.object().optional()
 });
 
 const updateChannelPartnerSchema = Joi.object({
@@ -45,8 +43,8 @@ const updateChannelPartnerSchema = Joi.object({
   address: Joi.string().trim().optional(),
   mahareraNo: Joi.string().min(5).max(50).trim().optional(),
   pinCode: Joi.string().length(6).pattern(/^\d{6}$/).optional(),
-  customData: Joi.object().optional(),
-  isActive: Joi.boolean().optional()
+  customData: Joi.object().optional()
+  // Removed isActive to manage via model hooks
 });
 
 const bulkCreateChannelPartnerSchema = Joi.array().items(createChannelPartnerSchema).min(1);
@@ -68,8 +66,7 @@ const createChannelPartner = async (req, res) => {
       ...req.body,
       photo: req.file ? req.file.path : '',
       createdBy: req.user._id,
-      updatedBy: req.user._id,
-      lastActivityDate: new Date()
+      updatedBy: req.user._id
     });
     await channelPartner.save();
     res.status(201).json(channelPartner);
@@ -121,7 +118,6 @@ const updateChannelPartner = async (req, res) => {
     Object.assign(channelPartner, req.body);
     if (req.file) channelPartner.photo = req.file.path;
     channelPartner.updatedBy = req.user._id;
-    channelPartner.lastActivityDate = new Date();
     await channelPartner.save();
     res.json(channelPartner);
   } catch (err) {
@@ -141,6 +137,10 @@ const deleteChannelPartner = async (req, res) => {
     const sourcingCount = await CPSourcing.countDocuments({ channelPartnerId: req.params.id });
     if (sourcingCount > 0) return res.status(403).json({ message: 'Cannot delete channel partner used in sourcing' });
 
+    if (channelPartner.photo && fs.existsSync(channelPartner.photo)) {
+      fs.unlinkSync(channelPartner.photo);
+    }
+
     await channelPartner.deleteOne();
     res.json({ message: 'Channel Partner deleted' });
   } catch (err) {
@@ -157,8 +157,7 @@ const bulkCreateChannelPartners = async (req, res) => {
       req.body.map(partner => ({
         ...partner,
         createdBy: req.user._id,
-        updatedBy: req.user._id,
-        lastActivityDate: new Date()
+        updatedBy: req.user._id
       }))
     );
     res.status(201).json({ message: 'Bulk create successful', count: channelPartners.length });
@@ -173,7 +172,7 @@ const bulkUpdateChannelPartners = async (req, res) => {
 
   try {
     const result = await ChannelPartner.updateMany(req.body.query, {
-      $set: { ...req.body.update, updatedBy: req.user._id, lastActivityDate: new Date() }
+      $set: { ...req.body.update, updatedBy: req.user._id }
     });
     res.json({ message: 'Bulk update successful', modifiedCount: result.modifiedCount });
   } catch (err) {
@@ -192,6 +191,9 @@ const bulkDeleteChannelPartners = async (req, res) => {
       if (leadCount > 0) return res.status(403).json({ message: `Cannot delete channel partner ${cp._id} used in leads` });
       const sourcingCount = await CPSourcing.countDocuments({ channelPartnerId: cp._id });
       if (sourcingCount > 0) return res.status(403).json({ message: `Cannot delete channel partner ${cp._id} used in sourcing` });
+      if (cp.photo && fs.existsSync(cp.photo)) {
+        fs.unlinkSync(cp.photo);
+      }
     }
     const result = await ChannelPartner.deleteMany(req.body.query);
     res.json({ message: 'Bulk delete successful', deletedCount: result.deletedCount });
