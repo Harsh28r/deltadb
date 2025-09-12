@@ -12,7 +12,6 @@ const { corsOptions, adminLoginCorsOptions, corsDebug } = require('./middleware/
 const projectRoutes = require('./routes/projectRoutes');
 // const taskRoutes = require('./routes/taskRoutes');
 const superadminRoutes = require('./routes/superadminRoutes');
-const cpSourceRoutes = require('./routes/cpSourceRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 
 const leadSourceRoutes = require('./routes/leadSourceRoutes');
@@ -23,6 +22,8 @@ const userReportingRoutes = require('./routes/userReportingRoutes');
 const userProjectRoutes = require('./routes/userProjectRoutes');
 const userDashboardRoutes = require('./routes/userDashboardRoutes');
 const permissionRoutes = require('./routes/permissionRoutes');
+const cpSourcingRoutes = require('./routes/cpSourcingRoutes');
+const channelPartnerRouters = require('./routes/channelPartnerRoutes');
 const initLeadSource = require('./scripts/initLeadSource');
 
 
@@ -129,7 +130,6 @@ app.use((req, res, next) => {
 app.use('/api/projects', projectRoutes);
 // app.use('/api/tasks', taskRoutes);
 app.use('/api/superadmin', superadminRoutes);
-app.use('/api/cp-sources', cpSourceRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 app.use('/api/lead-sources', leadSourceRoutes);
@@ -140,6 +140,9 @@ app.use('/api/user-reporting', userReportingRoutes);
 app.use('/api/user-projects', userProjectRoutes);
 app.use('/api/user', userDashboardRoutes);
 app.use('/api/permissions', permissionRoutes);
+
+app.use('/api/cp-sourcing', cpSourcingRoutes);
+app.use('/api/channel-partner', channelPartnerRouters);
 
 // Basic route
 app.get('/', (req, res) => {
