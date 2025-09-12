@@ -6,16 +6,28 @@ const channelPartnerSchema = new mongoose.Schema({
   firmName: { type: String, required: true, trim: true },
   location: { type: String, required: true, trim: true },
   address: { type: String, required: true, trim: true },
-  mahareraNo: { type: String, unique: true, trim: true },
+  mahareraNo: { type: String, unique: true, trim: true }, // Changed to optional
   photo: { type: String, default: '' },
   pinCode: { type: String, required: true, match: [/^\d{6}$/, 'Please enter a valid 6-digit pin code'] },
   customData: { type: mongoose.Schema.Types.Mixed, default: {} },
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false }, // Default to false
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
 }, { timestamps: true });
 
-// Check lead activity for isActive status
+// Check lead activity for isActive status on save
+channelPartnerSchema.pre('save', async function(next) {
+  const Lead = mongoose.model('Lead');
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const recentLead = await Lead.findOne({
+    channelPartner: this._id,
+    updatedAt: { $gte: thirtyDaysAgo }
+  });
+  this.isActive = !!recentLead; // Set true if recent lead exists
+  next();
+});
+
+// Check lead activity for isActive status on update
 channelPartnerSchema.pre('findOneAndUpdate', async function(next) {
   const Lead = mongoose.model('Lead');
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -25,9 +37,7 @@ channelPartnerSchema.pre('findOneAndUpdate', async function(next) {
       channelPartner: doc._id,
       updatedAt: { $gte: thirtyDaysAgo }
     });
-    const update = this.getUpdate();
-    update.$set = update.$set || {};
-    update.$set.isActive = !!recentLead; // Active if recent lead exists
+    this.set({ isActive: !!recentLead }); // Update isActive
   }
   next();
 });
