@@ -154,7 +154,7 @@ const createCPSourcing = async (req, res) => {
 
 const getCPSourcings = async (req, res) => {
   try {
-    const query = req.user.role === 'sourcing_person' ? { userId: req.user._id, isActive: true } : {};
+    const query = { userId: req.user._id };
     const cpSourcings = await CPSourcing.find(query)
       .populate('userId', 'name email')
       .populate('channelPartnerId', 'name phone')
@@ -173,7 +173,7 @@ const getCPSourcingById = async (req, res) => {
       .populate('channelPartnerId', 'name phone')
       .populate('projectId', 'name location');
     if (!cpSourcing) return res.status(404).json({ message: 'CP Sourcing not found' });
-    if (req.user.role === 'sourcing_person' && !cpSourcing.userId.equals(req.user._id)) {
+    if (!cpSourcing.userId.equals(req.user._id)) {
       return res.status(403).json({ message: 'Unauthorized to view this sourcing' });
     }
     res.json(cpSourcing);
@@ -189,7 +189,7 @@ const updateCPSourcing = async (req, res) => {
   try {
     const cpSourcing = await CPSourcing.findById(req.params.id);
     if (!cpSourcing) return res.status(404).json({ message: 'CP Sourcing not found' });
-    if (req.user.role === 'sourcing_person' && !cpSourcing.userId.equals(req.user._id)) {
+    if (!cpSourcing.userId.equals(req.user._id)) {
       return res.status(403).json({ message: 'Unauthorized to update this sourcing' });
     }
 
