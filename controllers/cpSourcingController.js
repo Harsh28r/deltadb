@@ -1,11 +1,11 @@
 const CPSourcing = require('../models/CPSourcing');
 const ChannelPartner = require('../models/ChannelPartner');
 const Project = require('../models/Project');
+const Lead = require('../models/Lead');
 const Joi = require('joi');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const Lead = require('../models/Lead');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -21,7 +21,7 @@ const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     console.log('Uploaded file MIME type:', file.mimetype);
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.mimetype)) {
       console.log('File rejected - Not an image:', file.originalname);
       return cb(new Error('File is not an image. Allowed types: jpeg, png, gif, webp'), false);
@@ -43,8 +43,7 @@ const createCPSourcingSchema = Joi.object({
     customData: Joi.object().optional()
   }).required(),
   projectId: Joi.string().hex().length(24).required(),
-  selfie: Joi.string().required(), // Allow base64 or empty
-  // selfie: Joi.string().optional(), // Allow base64 or empty
+  selfie: Joi.string().optional(), // Changed back to optional to align with model
   location: Joi.object({
     lat: Joi.number().required().min(-90).max(90),
     lng: Joi.number().required().min(-180).max(180)
@@ -66,14 +65,14 @@ const saveBase64Image = (base64String, dir) => {
 };
 
 const updateCPSourcingSchema = Joi.object({
-  selfie: Joi.string().required(),
+  selfie: Joi.string().optional(),
   location: Joi.object({
     lat: Joi.number().required().min(-90).max(90),
     lng: Joi.number().required().min(-180).max(180)
   }).required(),
   notes: Joi.string().optional(),
-  customData: Joi.object().optional(),
-  isActive: Joi.boolean().optional()
+  customData: Joi.object().optional()
+  // Removed isActive from schema to manage via model hooks
 });
 
 const bulkCreateCPSourcingSchema = Joi.array().items(createCPSourcingSchema).min(1);
@@ -132,7 +131,7 @@ const createCPSourcing = async (req, res) => {
     if (cpSourcing) {
       cpSourcing.sourcingHistory.push(historyEntry);
       cpSourcing.customData = req.body.customData || cpSourcing.customData;
-      cpSourcing.isActive = true;
+      // isActive managed by model hook
       await cpSourcing.save();
     } else {
       cpSourcing = new CPSourcing({
@@ -141,7 +140,7 @@ const createCPSourcing = async (req, res) => {
         projectId: req.body.projectId,
         sourcingHistory: [historyEntry],
         customData: req.body.customData || {},
-        isActive: true
+        isActive: false // Default to false
       });
       await cpSourcing.save();
     }
@@ -160,7 +159,7 @@ const getCPSourcings = async (req, res) => {
       .populate('userId', 'name email')
       .populate('channelPartnerId', 'name phone')
       .populate('projectId', 'name location')
-      .sort({ lastUpdateAt: -1 });
+      .sort({ createdAt: -1 });
     res.json(cpSourcings);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -194,16 +193,22 @@ const updateCPSourcing = async (req, res) => {
       return res.status(403).json({ message: 'Unauthorized to update this sourcing' });
     }
 
+    let selfiePath = cpSourcing.sourcingHistory[cpSourcing.sourcingHistory.length - 1].selfie;
+    if (req.file) {
+      selfiePath = req.file.path;
+    } else if (req.body.selfie && req.body.selfie.startsWith('data:image/')) {
+      selfiePath = saveBase64Image(req.body.selfie, 'uploads/cpsourcing');
+    }
+
     const historyEntry = {
       date: new Date(),
-      selfie: req.file ? req.file.path : cpSourcing.sourcingHistory[cpSourcing.sourcingHistory.length - 1].selfie,
+      selfie: selfiePath,
       location: req.body.location,
       notes: req.body.notes || ''
     };
     cpSourcing.sourcingHistory.push(historyEntry);
     cpSourcing.customData = req.body.customData || cpSourcing.customData;
-    cpSourcing.isActive = req.body.isActive ?? cpSourcing.isActive;
-    cpSourcing.lastUpdateAt = new Date();
+    // isActive managed by model hook
     await cpSourcing.save();
 
     res.json(cpSourcing);
@@ -238,7 +243,7 @@ const deleteCPSourcing = async (req, res) => {
 
     await CPSourcing.findByIdAndDelete(id);
     res.json({ message: 'CP Sourcing deleted successfully' });
-  } catch (err) { 
+  } catch (err) {
     console.error('deleteCPSourcing - Error:', err);
     res.status(500).json({ message: err.message });
   }
@@ -262,10 +267,14 @@ const bulkCreateCPSourcings = async (req, res) => {
         channelPartner = new ChannelPartner({
           ...item.channelPartnerData,
           createdBy: req.user._id,
-          updatedBy: req.user._id,
-          lastActivityDate: new Date()
+          updatedBy: req.user._id
         });
         await channelPartner.save();
+      }
+
+      let selfiePath = '';
+      if (item.selfie && item.selfie.startsWith('data:image/')) {
+        selfiePath = saveBase64Image(item.selfie, 'uploads/cpsourcing');
       }
 
       cpSourcings.push({
@@ -274,13 +283,12 @@ const bulkCreateCPSourcings = async (req, res) => {
         projectId: item.projectId,
         sourcingHistory: [{
           date: new Date(),
-          selfie: '',
+          selfie: selfiePath,
           location: item.location,
           notes: item.notes || ''
         }],
         customData: item.customData || {},
-        isActive: true,
-        lastUpdateAt: new Date()
+        isActive: false // Default to false
       });
     }
 
@@ -297,7 +305,7 @@ const bulkUpdateCPSourcings = async (req, res) => {
 
   try {
     const result = await CPSourcing.updateMany(req.body.query, {
-      $set: { ...req.body.update, lastUpdateAt: new Date() }
+      $set: req.body.update // isActive managed by model hook
     });
     res.json({ message: 'Bulk update successful', modifiedCount: result.modifiedCount });
   } catch (err) {
@@ -312,8 +320,14 @@ const bulkDeleteCPSourcings = async (req, res) => {
   try {
     const cpSourcings = await CPSourcing.find(req.body.query);
     for (const sourcing of cpSourcings) {
-      const leadCount = await Lead.countDocuments({ channelPartner: sourcing.channelPartnerId, cpSourcingId: sourcing._id });
+      const leadCount = await Lead.countDocuments({ cpSourcingId: sourcing._id });
       if (leadCount > 0) return res.status(403).json({ message: `Cannot delete sourcing ${sourcing._id} used in leads` });
+      // Delete selfie files
+      for (const history of sourcing.sourcingHistory) {
+        if (history.selfie && fs.existsSync(history.selfie)) {
+          fs.unlinkSync(history.selfie);
+        }
+      }
     }
     const result = await CPSourcing.deleteMany(req.body.query);
     res.json({ message: 'Bulk delete successful', deletedCount: result.deletedCount });

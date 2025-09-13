@@ -15,12 +15,24 @@ const cpSourcingSchema = new mongoose.Schema({
   channelPartnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ChannelPartner', required: true },
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
   sourcingHistory: [sourcingHistorySchema],
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false }, // Default to false
   customData: { type: mongoose.Schema.Types.Mixed, default: {} },
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
-// Check lead activity for isActive status
+// Check lead activity for isActive status on save
+cpSourcingSchema.pre('save', async function(next) {
+  const Lead = mongoose.model('Lead');
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const recentLead = await Lead.findOne({
+    cpSourcingId: this._id,
+    updatedAt: { $gte: thirtyDaysAgo }
+  });
+  this.isActive = !!recentLead; // Set true if recent lead exists
+  next();
+});
+
+// Check lead activity for isActive status on update
 cpSourcingSchema.pre('findOneAndUpdate', async function(next) {
   const Lead = mongoose.model('Lead');
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -30,9 +42,7 @@ cpSourcingSchema.pre('findOneAndUpdate', async function(next) {
       cpSourcingId: doc._id,
       updatedAt: { $gte: thirtyDaysAgo }
     });
-    const update = this.getUpdate();
-    update.$set = update.$set || {};
-    update.$set.isActive = !!recentLead; // Active if recent lead exists
+    this.set({ isActive: !!recentLead }); // Update isActive
   }
   next();
 });
