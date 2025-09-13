@@ -78,7 +78,7 @@ const createChannelPartner = async (req, res) => {
 
 const getChannelPartners = async (req, res) => {
   try {
-    const query = req.user.role === 'sourcing_person' ? { createdBy: req.user._id, isActive: true } : { isActive: true };
+    const query = { createdBy: req.user._id,};
     const channelPartners = await ChannelPartner.find(query)
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
@@ -95,7 +95,7 @@ const getChannelPartnerById = async (req, res) => {
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email');
     if (!channelPartner) return res.status(404).json({ message: 'Channel Partner not found' });
-    if (req.user.role === 'sourcing_person' && !channelPartner.createdBy.equals(req.user._id)) {
+    if (!channelPartner.createdBy.equals(req.user._id)) {
       return res.status(403).json({ message: 'Unauthorized to view this channel partner' });
     }
     res.json(channelPartner);
@@ -111,7 +111,7 @@ const updateChannelPartner = async (req, res) => {
   try {
     const channelPartner = await ChannelPartner.findById(req.params.id);
     if (!channelPartner) return res.status(404).json({ message: 'Channel Partner not found' });
-    if (req.user.role === 'sourcing_person' && !channelPartner.createdBy.equals(req.user._id)) {
+    if (!channelPartner.createdBy.equals(req.user._id)) {
       return res.status(403).json({ message: 'Unauthorized to update this channel partner' });
     }
 
