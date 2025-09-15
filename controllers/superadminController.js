@@ -656,6 +656,16 @@ const listRoles = async (_req, res) => {
   }
 };
 
+
+
+const getindividualRoleById = async (req, res) => {
+  const { roleId } = req.params;
+  
+  const role = await Role.findById(roleId);
+  res.json(role);
+};
+
+
 // Create a user with a specific role
 const createUserWithRole = async (req, res) => {
   const { name, email, password, mobile, companyName, roleName } = req.body || {};
@@ -2170,5 +2180,6 @@ module.exports = {
   updateUserProjects,
   deleteUserProjects,
   assignProjectsToUser,
+  getindividualRoleById,
   getUserProjectsAssignment,
 };
