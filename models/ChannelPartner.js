@@ -6,7 +6,7 @@ const channelPartnerSchema = new mongoose.Schema({
   firmName: { type: String, required: true, trim: true },
   location: { type: String, required: true, trim: true },
   address: { type: String, required: true, trim: true },
-  mahareraNo: { type: String, unique: true, trim: true }, // Changed to optional
+  mahareraNo: { type: String,  trim: true,required: false }, // Changed to optional
   photo: { type: String, default: '' },
   pinCode: { type: String, required: true, match: [/^\d{6}$/, 'Please enter a valid 6-digit pin code'] },
   customData: { type: mongoose.Schema.Types.Mixed, default: {} },

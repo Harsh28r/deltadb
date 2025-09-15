@@ -98,8 +98,20 @@ const getChannelPartnerById = async (req, res) => {
     if (!channelPartner.createdBy.equals(req.user._id)) {
       return res.status(403).json({ message: 'Unauthorized to view this channel partner' });
     }
-    res.json(channelPartner);
+
+    // Fetch associated leads
+    const leads = await Lead.find({ channelPartner: req.params.id })
+      .populate('cpSourcingId', 'projectId customData')
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 });
+
+    // Combine channel partner and leads in response
+    res.json({
+      channelPartner,
+      leads
+    });
   } catch (err) {
+    console.error('Error in getChannelPartnerById:', err);
     res.status(500).json({ message: err.message });
   }
 };

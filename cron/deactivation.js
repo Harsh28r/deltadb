@@ -12,7 +12,7 @@ cron.schedule('0 0 * * *', async () => {
     for (const cp of channelPartners) {
       const recentLead = await Lead.findOne({
         channelPartner: cp._id,
-        updatedAt: { $gte: thirtyDaysAgo }
+        createdAt: { $gte: thirtyDaysAgo }
       });
       if (!recentLead) {
         await ChannelPartner.findByIdAndUpdate(cp._id, { isActive: false });
@@ -24,7 +24,7 @@ cron.schedule('0 0 * * *', async () => {
     for (const sourcing of cpSourcings) {
       const recentLead = await Lead.findOne({
         cpSourcingId: sourcing._id,
-        updatedAt: { $gte: thirtyDaysAgo }
+        createdAt: { $gte: thirtyDaysAgo }
       });
       if (!recentLead) {
         await CPSourcing.findByIdAndUpdate(sourcing._id, { isActive: false });

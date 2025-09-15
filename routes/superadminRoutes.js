@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, createUserWithProjects, getUsersWithProjects, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions, updateUserProjects, deleteUserProjects, assignProjectsToUser, getUserProjectsAssignment } = require('../controllers/superadminController');
+const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, createUserWithProjects, getUsersWithProjects, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions, updateUserProjects, deleteUserProjects, assignProjectsToUser, getUserProjectsAssignment, getindividualRoleById } = require('../controllers/superadminController');
 const superadmin = require('../middleware/superadmin');
 
 // Public routes (no authentication required)
@@ -16,6 +16,8 @@ router.post('/roles', superadmin, createRole);
 router.put('/roles/:roleName', superadmin, editRole);
 router.delete('/roles/:roleName', superadmin, deleteRole);
 router.get('/roles', superadmin, listRoles);
+// router.get('/roles/:roleName', superadmin, getindividualRole);
+router.get('/roles/:roleId', superadmin, getindividualRoleById);
 
 // Update superadmin permissions
 router.put('/superadmin/permissions', superadmin, updateSuperadminPermissions);
