@@ -30,7 +30,7 @@ const createChannelPartnerSchema = Joi.object({
   firmName: Joi.string().required().min(3).max(100).trim(),
   location: Joi.string().required().trim(),
   address: Joi.string().required().trim(),
-  mahareraNo: Joi.string().min(5).max(50).trim().optional(),
+  mahareraNo: Joi.string(). trim().optional(),
   pinCode: Joi.string().required().length(6).pattern(/^\d{6}$/),
   customData: Joi.object().optional()
 });
