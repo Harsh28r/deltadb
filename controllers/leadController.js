@@ -37,6 +37,60 @@ const bulkTransferLeadsSchema = Joi.object({
   projectId: Joi.string().hex().length(24).optional()
 }).unknown(true);
 
+// const createLead = async (req, res) => {
+//   const { error } = createLeadSchema.validate(req.body);
+//   if (error) return res.status(400).json({ message: error.details[0].message });
+
+//   try {
+//     console.log('createLead - req.body:', JSON.stringify(req.body));
+//     const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true });
+//     if (!defaultStatus) return res.status(400).json({ message: 'No default lead status found' });
+
+//     if (req.body.currentStatus && req.body.currentStatus !== defaultStatus._id.toString()) {
+//       return res.status(400).json({ message: 'Provided status must be the default status' });
+//     }
+
+//     if (req.body.channelPartner) {
+//       const channelPartner = await ChannelPartner.findById(req.body.channelPartner);
+//       if (!channelPartner) {
+//         return res.status(400).json({ message: 'Invalid channel partner' });
+//       }
+//       if (req.body.cpSourcingId) {
+//         const cpSourcing = await CPSourcing.findById(req.body.cpSourcingId);
+
+//         if (!cpSourcing || !cpSourcing.channelPartnerId.equals(req.body.channelPartner) || !cpSourcing.projectId.equals(req.body.project)) {
+//           return res.status(400).json({ message: 'Invalid cpSourcingId for channel partner or project' });
+//         }
+//       }
+//     }
+
+//     const lead = new Lead({
+//       user: req.body.userId,
+//       project: req.body.project,
+//       channelPartner: req.body.channelPartner,
+//       leadSource: req.body.leadSource,
+//       currentStatus: defaultStatus._id,
+//       customData: req.body.customData || {},
+//       cpSourcingId: req.body.cpSourcingId
+//     });
+//     await lead.save();
+
+//     // Update isActive for ChannelPartner and CPSourcing
+//     if (req.body.channelPartner) {
+//       await ChannelPartner.findByIdAndUpdate(req.body.channelPartner, { isActive: true });
+//     }
+//     if (req.body.cpSourcingId) {
+//       await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
+//     }
+
+//     await logLeadActivity(lead._id, req.user._id, 'created', { data: { ...req.body, currentStatus: defaultStatus._id.toString() } });
+//     res.status(201).json(lead);
+//   } catch (err) {
+//     console.error('createLead - Error:', err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
 const createLead = async (req, res) => {
   const { error } = createLeadSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
@@ -50,27 +104,41 @@ const createLead = async (req, res) => {
       return res.status(400).json({ message: 'Provided status must be the default status' });
     }
 
+    let cpSourcingId = null;
     if (req.body.channelPartner) {
+      // Validate channel partner
       const channelPartner = await ChannelPartner.findById(req.body.channelPartner);
       if (!channelPartner) {
         return res.status(400).json({ message: 'Invalid channel partner' });
       }
+
+      // Validate CPSourcing for cpSourcingId, channelPartner, and project
+      
       if (req.body.cpSourcingId) {
-        const cpSourcing = await CPSourcing.findById(req.body.cpSourcingId);
-        if (!cpSourcing || !cpSourcing.channelPartnerId.equals(req.body.channelPartner) || !cpSourcing.projectId.equals(req.body.project)) {
-          return res.status(400).json({ message: 'Invalid cpSourcingId for channel partner or project' });
+        // return res.status(400).json({ message: 'cpSourcingId is required for channel partner leads' });
+        if (!mongoose.isValidObjectId(req.body.cpSourcingId)) {
+          return res.status(400).json({ message: 'Invalid cpSourcingId' });
         }
+        const cpSourcing = await CPSourcing.findOne({
+          userId: req.body.cpSourcingId,
+          channelPartnerId: req.body.channelPartner,
+          projectId: req.body.project
+        });
+        if (!cpSourcing) {
+          return res.status(400).json({ message: 'No matching CPSourcing found for selected sourcing person, channel partner, and project' });
+        }
+        cpSourcingId = cpSourcing._id;
       }
     }
 
     const lead = new Lead({
-      user: req.body.userId,
+      user: req.user._id, // Logged-in user creating the lead
       project: req.body.project,
       channelPartner: req.body.channelPartner,
       leadSource: req.body.leadSource,
       currentStatus: defaultStatus._id,
       customData: req.body.customData || {},
-      cpSourcingId: req.body.cpSourcingId
+      cpSourcingId
     });
     await lead.save();
 
@@ -78,11 +146,13 @@ const createLead = async (req, res) => {
     if (req.body.channelPartner) {
       await ChannelPartner.findByIdAndUpdate(req.body.channelPartner, { isActive: true });
     }
-    if (req.body.cpSourcingId) {
-      await CPSourcing.findByIdAndUpdate(req.body.cpSourcingId, { isActive: true });
+    if (cpSourcingId) {
+      await CPSourcing.findByIdAndUpdate(cpSourcingId, { isActive: true });
     }
 
-    await logLeadActivity(lead._id, req.user._id, 'created', { data: { ...req.body, currentStatus: defaultStatus._id.toString() } });
+    await logLeadActivity(lead._id, req.user._id, 'created', { 
+      data: { ...req.body, currentStatus: defaultStatus._id.toString(), cpSourcingId } 
+    });
     res.status(201).json(lead);
   } catch (err) {
     console.error('createLead - Error:', err);
@@ -168,12 +238,12 @@ const editLead = async (req, res) => {
     await lead.save();
 
     // Update isActive for ChannelPartner and CPSourcing
-    if (lead.channelPartner) {
-      await ChannelPartner.findByIdAndUpdate(lead.channelPartner, { isActive: true });
-    }
-    if (lead.cpSourcingId) {
-      await CPSourcing.findByIdAndUpdate(lead.cpSourcingId, { isActive: true });
-    }
+    // if (lead.channelPartner) {
+    //   await ChannelPartner.findByIdAndUpdate(lead.channelPartner, { isActive: true });
+    // }
+    // if (lead.cpSourcingId) {
+    //   await CPSourcing.findByIdAndUpdate(lead.cpSourcingId, { isActive: true });
+    // }
 
     await logLeadActivity(lead._id, req.user._id, 'updated', { oldData, newData: req.body });
     res.json(lead);

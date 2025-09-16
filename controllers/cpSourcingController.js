@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const CPSourcing = require('../models/CPSourcing');
 const ChannelPartner = require('../models/ChannelPartner');
 const Project = require('../models/Project');
@@ -6,6 +7,8 @@ const Joi = require('joi');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const User = require('../models/User');
+const mime = require('mime-types');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -182,6 +185,73 @@ const getCPSourcingById = async (req, res) => {
   }
 };
 
+const getUniqueSourcingPersons = async (req, res) => {
+  try {
+    console.log('getUniqueSourcingPersons - query:', req.query);
+    const { projectId, channelPartnerId } = req.query;
+    const query = {};
+    if (projectId) {
+      if (!mongoose.isValidObjectId(projectId)) {
+        return res.status(400).json({ message: 'Invalid projectId' });
+      }
+      query.projectId = projectId;
+    }
+    if (channelPartnerId) {
+      if (!mongoose.isValidObjectId(channelPartnerId)) {
+        return res.status(400).json({ message: 'Invalid channelPartnerId' });
+      }
+      query.channelPartnerId = channelPartnerId;
+    }
+
+    const cpSourcings = await CPSourcing.find(query).distinct('userId');
+    if (!cpSourcings.length) {
+      console.log('No sourcing persons found for query:', query);
+      return res.json([]);
+    }
+
+    const users = await User.find({ _id: { $in: cpSourcings } }).select('name email _id');
+    if (!users.length) {
+      console.log('No users found for userIds:', cpSourcings);
+      return res.json([]);
+    }
+
+    console.log('Found users:', users.map(u => ({ id: u._id, name: u.name })));
+    res.json(users);
+  } catch (err) {
+    console.error('Error in getUniqueSourcingPersons:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const validateCPSourcing = async (req, res) => {
+  const { userId, channelPartnerId, projectId } = req.body;
+
+  try {
+    if (!userId || !channelPartnerId || !projectId) {
+      return res.status(400).json({ message: 'userId, channelPartnerId, and projectId are required' });
+    }
+
+    if (!mongoose.isValidObjectId(userId) || !mongoose.isValidObjectId(channelPartnerId) || !mongoose.isValidObjectId(projectId)) {
+      return res.status(400).json({ message: 'Invalid ID format' });
+    }
+
+    const cpSourcing = await CPSourcing.findOne({
+      userId,
+      channelPartnerId,
+      projectId
+    });
+
+    if (!cpSourcing) {
+      return res.status(400).json({ message: 'No matching CPSourcing found for selected user, channel partner, and project' });
+    }
+
+    res.json({ cpSourcingId: cpSourcing._id });
+  } catch (err) {
+    console.error('Error in validateCPSourcing:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const updateCPSourcing = async (req, res) => {
   const { error } = updateCPSourcingSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
@@ -340,9 +410,11 @@ module.exports = {
   createCPSourcing: [upload.single('selfie'), createCPSourcing],
   getCPSourcings,
   getCPSourcingById,
+  getUniqueSourcingPersons,
   updateCPSourcing: [upload.single('selfie'), updateCPSourcing],
   deleteCPSourcing,
   bulkCreateCPSourcings,
   bulkUpdateCPSourcings,
-  bulkDeleteCPSourcings
+  bulkDeleteCPSourcings,
+  validateCPSourcing
 };
