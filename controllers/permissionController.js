@@ -323,6 +323,7 @@ const getAllUsersPermissions = async (req, res) => {
             name: user.name,
             email: user.email,
             role: user.role,
+            roleid: user.roleRef,
             level: user.level,
             isActive: user.isActive,
             permissions: {
@@ -341,6 +342,7 @@ const getAllUsersPermissions = async (req, res) => {
             name: user.name,
             email: user.email,
             role: user.role,
+            roleid: user.roleRef,
             level: user.level,
             isActive: user.isActive,
             permissions: {
