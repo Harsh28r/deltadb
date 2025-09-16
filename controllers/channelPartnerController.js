@@ -41,7 +41,7 @@ const updateChannelPartnerSchema = Joi.object({
   firmName: Joi.string().min(3).max(100).trim().optional(),
   location: Joi.string().trim().optional(),
   address: Joi.string().trim().optional(),
-  mahareraNo: Joi.string().min(5).max(50).trim().optional(),
+  mahareraNo: Joi.string().trim().optional(),
   pinCode: Joi.string().length(6).pattern(/^\d{6}$/).optional(),
   customData: Joi.object().optional()
   // Removed isActive to manage via model hooks

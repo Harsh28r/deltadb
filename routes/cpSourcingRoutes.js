@@ -6,15 +6,20 @@ const {
   createCPSourcing,
   getCPSourcings,
   getCPSourcingById,
+  getUniqueSourcingPersons,
   updateCPSourcing,
   deleteCPSourcing,
   bulkCreateCPSourcings,
   bulkUpdateCPSourcings,
-  bulkDeleteCPSourcings
+  bulkDeleteCPSourcings,
+  validateCPSourcing
 } = require('../controllers/cpSourcingController');
 
 const router = express.Router();
-
+// Static routes first
+router.get('/unique-users', auth, checkPermission('leads:create'),getUniqueSourcingPersons);
+router.post('/validate', auth ,checkPermission('leads:create'),validateCPSourcing);
+// Dynamic routes after
 router.post('/', auth, checkPermission('cp-sourcing:create'), createCPSourcing);
 router.get('/', auth, checkPermission('cp-sourcing:read_all'), getCPSourcings);
 router.get('/:id', auth, checkPermission('cp-sourcing:read'), getCPSourcingById);
