@@ -41,7 +41,7 @@ const createCPSourcingSchema = Joi.object({
     firmName: Joi.string().required().min(3).max(100).trim(),
     location: Joi.string().required().trim(),
     address: Joi.string().required().trim(),
-    mahareraNo: Joi.string().optional().min(5).max(50).trim(),
+    mahareraNo: Joi.string().optional().trim(),
     pinCode: Joi.string().required().length(6).pattern(/^\d{6}$/),
     customData: Joi.object().optional()
   }).required(),
