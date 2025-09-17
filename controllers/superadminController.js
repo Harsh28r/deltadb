@@ -666,6 +666,13 @@ const getindividualRoleById = async (req, res) => {
 };
 
 
+const generatePath = async (userId) => {
+  const parentReporting = await UserReporting.findOne({ user: userId });
+  return parentReporting && parentReporting.reportsTo.length > 0 && parentReporting.reportsTo[0].path
+    ? `${parentReporting.reportsTo[0].path}${userId}/`
+    : `/${userId}/`;
+};
+
 // Create a user with a specific role
 const createUserWithRole = async (req, res) => {
   const { name, email, password, mobile, companyName, roleName } = req.body || {};
@@ -700,6 +707,33 @@ const createUserWithRole = async (req, res) => {
     });
 
     await user.save();
+
+    // Skip UserReporting for superadmin
+    if (role !== 'superadmin' && level > 1) {
+      // Find superadmin
+      const superadmin = await User.findOne({ role: 'superadmin', level: 1 });
+      if (!superadmin) {
+        // Roll back user creation if superadmin is not found
+        await User.deleteOne({ _id: user._id });
+        return res.status(500).json({ message: 'Superadmin not found, cannot create reporting' });
+      }
+
+      // Create UserReporting
+      const reporting = new UserReporting({
+        user: user._id,
+        reportsTo: [
+          {
+            user: superadmin._id,
+            teamType: 'superadmin',
+            context: 'Superadmin oversight',
+            path: await generatePath(superadmin._id)
+          }
+        ],
+        level: user.level
+      });
+      await reporting.save();
+      console.log(`UserReporting created for user ${user._id} with superadmin ${superadmin._id}`);
+    }
 
     res.status(201).json({
       message: 'User created successfully',

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const UserReporting = require('../models/UserReporting');
 const User = require('../models/User');
 const Joi = require('joi');
@@ -16,6 +17,12 @@ const createReportingSchema = Joi.object({
 
 const updateReportingSchema = Joi.object({
   reportsTo: Joi.array().items(relationshipSchema).optional()
+});
+
+const getAllReportingSchema = Joi.object({
+  level: Joi.number().integer().min(0).optional(),
+  teamType: Joi.string().valid('project', 'global', 'superadmin', 'custom').optional(),
+  userId: Joi.string().hex().length(24).optional()
 });
 
 const generatePath = async (userId) => {
@@ -56,10 +63,36 @@ const getHierarchy = async (req, res) => {
   const { userId } = req.params;
   try {
     const subordinates = await UserReporting.find({
-      'reportsTo.path': { $regex: `^/${userId}/` }
+      'reportsTo.path': { $regex: `/(${userId})/` }
     }).populate('user reportsTo.user reportsTo.project');
+    console.log(`getHierarchy - userId: ${userId}, found: ${subordinates.length}`);
     res.json(subordinates);
   } catch (err) {
+    console.error('Error in getHierarchy:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getAllUserReportings = async (req, res) => {
+  const { error } = getAllReportingSchema.validate(req.query);
+  if (error) return res.status(400).json({ message: error.details[0].message });
+
+  try {
+    const query = {};
+    if (req.query.level) query.level = parseInt(req.query.level);
+    if (req.query.teamType) query['reportsTo.teamType'] = req.query.teamType;
+    if (req.query.userId) query.user = req.query.userId;
+
+    const reportings = await UserReporting.find(query)
+      .populate('user', 'name email _id')
+      .populate('reportsTo.user', 'name email _id')
+      .populate('reportsTo.project', 'name _id')
+      .sort({ createdAt: -1 });
+
+    console.log('getAllUserReportings - query:', query, 'found:', reportings.length);
+    res.json(reportings);
+  } catch (err) {
+    console.error('Error in getAllUserReportings:', err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -118,4 +151,12 @@ const bulkDeleteUserReportings = async (req, res) => {
   }
 };
 
-module.exports = { createReporting, getHierarchy, updateReporting, deleteReporting, bulkUpdateUserReportings, bulkDeleteUserReportings };
+module.exports = {
+  createReporting,
+  getHierarchy,
+  getAllUserReportings,
+  updateReporting,
+  deleteReporting,
+  bulkUpdateUserReportings,
+  bulkDeleteUserReportings
+};
