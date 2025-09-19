@@ -26,7 +26,7 @@ const cpSourcingRoutes = require('./routes/cpSourcingRoutes');
 const channelPartnerRouters = require('./routes/channelPartnerRoutes');
 const initLeadSource = require('./scripts/initLeadSource');
 const imageRoutes = require('./routes/images'); // Adjust path
-
+const dashBoardRoutes = require('./routes/dashBoardRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -145,6 +145,7 @@ app.use('/api/permissions', permissionRoutes);
 app.use('/api/cp-sourcing', cpSourcingRoutes);
 app.use('/api/channel-partner', channelPartnerRouters);
 app.use('/', imageRoutes);
+app.use('/api/dashboard', dashBoardRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
