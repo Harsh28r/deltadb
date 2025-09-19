@@ -33,7 +33,7 @@ router.get('/users/by-role', superadmin, getAllUsersGroupedByRole);
 router.put('/update-user-projects', superadmin, updateUserProjects);
 router.delete('/delete-user-projects', superadmin, deleteUserProjects);
 router.post('/assign-projects-to-user', superadmin, assignProjectsToUser);
-router.get('/get-user-projects-assignment/:userId', superadmin, getUserProjectsAssignment);
+router.delete('/get-user-projects-assignment/:userId', superadmin, getUserProjectsAssignment);
 
 // Individual user management
 router.get('/users/:userId', superadmin, getUserById);

@@ -522,8 +522,8 @@ const createRole = async (req, res) => {
     }
 
     // Validate level (1 = superadmin, 2 = manager, 3 = user, 4 = sales)
-    if (level < 1 || level > 4) {
-      return res.status(400).json({ message: 'Level must be between 1 and 4' });
+    if (level < 1 || level > 10) {
+      return res.status(400).json({ message: 'Level must be between 1 and 10' });
     }
 
     // Validate permissions array
@@ -585,8 +585,8 @@ const editRole = async (req, res) => {
     }
     
     if (level !== undefined) {
-      if (level < 1 || level > 4) {
-        return res.status(400).json({ message: 'Level must be between 1 and 4' });
+      if (level < 1 || level > 10) {
+        return res.status(400).json({ message: 'Level must be between 1 and 10' });
       }
       role.level = level;
     }
@@ -1966,7 +1966,8 @@ const assignProjectsToUser = async (req, res) => {
 // Get all projects with user assignment status and handle assignment
 const getUserProjectsAssignment = async (req, res) => {
   const { userId } = req.params;
-  const { action, projectIds } = req.body || {};
+  const { action } = req.query;
+  const projectIds = req.query.projectIds ? req.query.projectIds.split(',') : [];
 
   try {
     if (!userId) {
