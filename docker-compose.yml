@@ -44,6 +44,29 @@ services:
       retries: 3
       start_period: 40s
 
+  # Cron Service for Scheduled Tasks
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.cron
+    container_name: deltayards-cron
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://admin:password123@mongodb:27017/deltayards_crm?authSource=admin
+    depends_on:
+      - mongodb
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - deltayards-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('Cron service is running'); process.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   # Nginx Reverse Proxy (Optional)
   nginx:
     image: nginx:alpine

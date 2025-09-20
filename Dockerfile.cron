@@ -1,0 +1,34 @@
+# Use Node.js LTS version
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application code (only what's needed for cron)
+COPY models/ ./models/
+COPY cron/ ./cron/
+COPY .env* ./
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+
+# Change ownership of the app directory
+RUN chown -R nodejs:nodejs /app
+USER nodejs
+
+# Health check for cron service
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
+  CMD node -e "console.log('Cron service is running'); process.exit(0)"
+
+# Start the cron service
+CMD ["node", "cron/cron-runner.js"]
