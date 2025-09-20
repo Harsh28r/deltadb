@@ -26,7 +26,7 @@ cpSourcingSchema.pre('save', async function(next) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const recentLead = await Lead.findOne({
     cpSourcingId: this._id,
-    updatedAt: { $gte: thirtyDaysAgo }
+    createdAt: { $gte: thirtyDaysAgo }
   });
   this.isActive = !!recentLead; // Set true if recent lead exists
   next();
@@ -40,7 +40,7 @@ cpSourcingSchema.pre('findOneAndUpdate', async function(next) {
   if (doc) {
     const recentLead = await Lead.findOne({
       cpSourcingId: doc._id,
-      updatedAt: { $gte: thirtyDaysAgo }
+      createdAt: { $gte: thirtyDaysAgo }
     });
     this.set({ isActive: !!recentLead }); // Update isActive
   }
