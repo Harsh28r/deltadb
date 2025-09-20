@@ -28,6 +28,9 @@ const initLeadSource = require('./scripts/initLeadSource');
 const imageRoutes = require('./routes/images'); // Adjust path
 const dashBoardRoutes = require('./routes/dashBoardRoutes');
 
+// Initialize cron jobs
+require('./cron/deactivation');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -138,7 +141,7 @@ app.use('/api/lead-statuses', leadStatusRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/lead-activities', leadActivityRoutes);
 app.use('/api/user-reporting', userReportingRoutes);
-app.use('/api/user-projects', userProjectRoutes);
+// app.use('/api/user-projects', userProjectRoutes);
 app.use('/api/user', userDashboardRoutes);
 app.use('/api/permissions', permissionRoutes);
 

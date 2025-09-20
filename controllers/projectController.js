@@ -10,10 +10,10 @@ function publicUser(user, rolePermsMap) {
     name: user.name,
     email: user.email,
     role: user.role,
-    level: user.level,
-    mobile: user.mobile,
-    companyName: user.companyName,
-    permissions: rolePermsMap?.get(roleKey) || [],
+    // level: user.level,
+    // mobile: user.mobile,
+    // companyName: user.companyName,
+    // permissions: rolePermsMap?.get(roleKey) || [],
   };
 }
 
@@ -120,7 +120,7 @@ const createProject = async (req, res) => {
       logo,
       developBy,
       owner: ownerId,
-      members: ownerId ? [ownerId] : [],
+      members: ownerId ? [ownerId] : [], 
       managers: ownerId ? [ownerId] : [],
     });
     

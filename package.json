@@ -17,7 +17,11 @@
     "pm2:logs": "pm2 logs",
     "docker:build": "docker build -t deltayards-crm .",
     "docker:run": "docker run -p 5000:5000 deltayards-crm",
-    "docker:compose": "docker-compose up -d"
+    "docker:compose": "docker-compose up -d",
+    "docker:deploy": "docker-compose down --remove-orphans && docker-compose build --no-cache && docker-compose up -d",
+    "docker:logs": "docker-compose logs -f",
+    "docker:stop": "docker-compose down",
+    "docker:restart": "docker-compose restart"
   },
   "keywords": [
     "crm",

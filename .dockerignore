@@ -1,5 +1,5 @@
-# Dependencies
-node_modules
+# Node modules
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -12,36 +12,26 @@ yarn-error.log*
 .env.production.local
 
 # Logs
-logs
+logs/
 *.log
 
 # Runtime data
-pids
+pids/
 *.pid
 *.seed
 *.pid.lock
 
 # Coverage directory used by tools like istanbul
-coverage
-*.lcov
+coverage/
 
 # nyc test coverage
-.nyc_output
+.nyc_output/
 
 # Dependency directories
 jspm_packages/
 
 # Optional npm cache directory
 .npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
 
 # Optional REPL history
 .node_repl_history
@@ -53,32 +43,27 @@ jspm_packages/
 .yarn-integrity
 
 # dotenv environment variables file
-.env.test
+.env
 
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
+# next.js build output
 .next
 
-# Nuxt.js build / generate output
+# nuxt.js build output
 .nuxt
-dist
 
-# Gatsby files
-.cache/
-public
+# vuepress build output
+.vuepress/dist
 
-# Storybook build outputs
-.out
-.storybook-out
+# Serverless directories
+.serverless
 
-# Temporary folders
-tmp/
-temp/
+# FuseBox cache
+.fusebox/
 
-# Editor directories and files
+# DynamoDB Local files
+.dynamodb/
+
+# IDE files
 .vscode/
 .idea/
 *.swp
@@ -95,13 +80,17 @@ ehthumbs.db
 Thumbs.db
 
 # Git
-.git
+.git/
 .gitignore
 
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
 # Documentation
-README.md
-DEPLOYMENT.md
 *.md
+docs/
 
 # Test files
 test/
@@ -110,20 +99,21 @@ __tests__/
 *.test.js
 *.spec.js
 
-# Development tools
-nodemon.json
-.eslintrc.js
-.prettierrc
-jest.config.js
+# Build artifacts
+build/
+dist/
 
-# Docker files
-Dockerfile
-docker-compose.yml
-.dockerignore
-
-# PM2 files
-ecosystem.config.js
+# Temporary files
+tmp/
+temp/
 
 # Uploads (will be mounted as volume)
 uploads/
 
+# Backup files
+*.bak
+*.backup
+
+# Deployment scripts
+docker-deploy.*
+deploy.sh
