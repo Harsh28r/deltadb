@@ -4,7 +4,7 @@ const Project = require('../models/Project');
 const { getUserProjectPermissions: getUserProjectPermissionsMiddleware } = require('../middleware/permissionMiddleware');
 
 /**
- * Get user's effective permissions (role + custom)
+ * Get user's permissions (SIMPLE & CLEAN)
  */
 const getUserPermissions = async (req, res) => {
   try {
@@ -18,13 +18,33 @@ const getUserPermissions = async (req, res) => {
       }
     }
 
+    console.log(`🔍 Looking for user with ID: ${userId}`);
     const user = await User.findById(userId).populate('roleRef');
     if (!user) {
+      console.log(`❌ User not found with ID: ${userId}`);
       return res.status(404).json({ message: 'User not found' });
     }
+    console.log(`✅ Found user: ${user.name} (${user.email})`);
 
-    const effectivePermissions = await user.getEffectivePermissions();
+    // Get role information
+    const Role = require('../models/Role');
+    const roleDef = await Role.findOne({ name: user.role });
+    const rolePermissions = roleDef?.permissions || [];
+
     const canAccessAllProjects = user.role === 'superadmin' || user.level === 1;
+
+    // GET ALL PERMISSIONS: Role + Custom Allowed - Denied
+    const currentCustomAllowed = user.customPermissions?.allowed || [];
+    const currentCustomDenied = user.customPermissions?.denied || [];
+    
+    // Combine role permissions + custom allowed permissions
+    const allAllowed = [...rolePermissions, ...currentCustomAllowed];
+    
+    // Remove denied permissions from allowed list
+    const finalAllowed = allAllowed.filter(perm => !currentCustomDenied.includes(perm));
+    
+    // Remove duplicates
+    const uniqueAllowed = [...new Set(finalAllowed)];
 
     res.json({
       success: true,
@@ -37,18 +57,14 @@ const getUserPermissions = async (req, res) => {
         isActive: user.isActive
       },
       permissions: {
-        effective: effectivePermissions,
-        custom: {
-          allowed: user.customPermissions?.allowed || [],
-          denied: user.customPermissions?.denied || []
-        },
-        restrictions: user.restrictions || {}
+        allowed: uniqueAllowed,
+        denied: currentCustomDenied
       },
       projectAccess: {
         canAccessAll: canAccessAllProjects,
         allowedProjects: user.restrictions?.allowedProjects || [],
         deniedProjects: user.restrictions?.deniedProjects || [],
-        maxProjects: user.restrictions?.maxProjects
+        maxProjects: user.restrictions?.maxProjects || null
       }
     });
   } catch (error) {
@@ -371,12 +387,12 @@ const getAllUsersPermissions = async (req, res) => {
 };
 
 /**
- * Update user's effective permissions (simplified approach)
+ * Update user's permissions (NEW STRUCTURE)
  */
 const updateUserEffectivePermissions = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { effective } = req.body;
+    const { allowed, denied } = req.body;
 
     // Only superadmin can update permissions
     if (req.user.role !== 'superadmin' && req.user.level !== 1) {
@@ -396,36 +412,49 @@ const updateUserEffectivePermissions = async (req, res) => {
     // Initialize custom permissions if not exists
     user.customPermissions = user.customPermissions || { allowed: [], denied: [] };
 
-    // Validate effective permissions
-    if (!Array.isArray(effective)) {
-      return res.status(400).json({ 
-        message: 'Effective permissions must be an array',
-        received: effective 
-      });
+    console.log(`🔧 UPDATING PERMISSIONS for ${user.name} (${user.role})`);
+    console.log(`   📋 Role permissions: ${rolePermissions.length}`);
+    console.log(`   🎯 Target allowed: ${allowed?.length || 0}`);
+    console.log(`   🚫 Target denied: ${denied?.length || 0}`);
+
+    // Calculate what should be custom allowed/denied
+    if (allowed && Array.isArray(allowed)) {
+      // What should be custom allowed (in allowed but NOT in role)
+      const roleSet = new Set(rolePermissions);
+      const customAllowed = allowed.filter(perm => !roleSet.has(perm));
+      user.customPermissions.allowed = [...new Set(customAllowed.filter(perm => perm && typeof perm === 'string'))];
     }
 
-    // Calculate what should be allowed/denied based on effective permissions
-    const effectiveSet = new Set(effective);
-    const roleSet = new Set(rolePermissions);
-    
-    // What should be allowed (in effective but not in role)
-    const newAllowed = effective.filter(perm => !roleSet.has(perm));
-    
-    // What should be denied (in role but not in effective)
-    const newDenied = rolePermissions.filter(perm => !effectiveSet.has(perm));
-    
-    // Update custom permissions
-    user.customPermissions.allowed = newAllowed;
-    user.customPermissions.denied = newDenied;
+    if (denied && Array.isArray(denied)) {
+      // What should be custom denied (in denied but NOT in role)
+      const roleSet = new Set(rolePermissions);
+      const customDenied = denied.filter(perm => !roleSet.has(perm));
+      user.customPermissions.denied = [...new Set(customDenied.filter(perm => perm && typeof perm === 'string'))];
+    }
 
     await user.save();
 
-    // Get updated effective permissions
-    const updatedEffectivePermissions = await user.getEffectivePermissions();
+    // Get updated permissions using the same logic as GET
+    const currentCustomAllowed = user.customPermissions?.allowed || [];
+    const currentCustomDenied = user.customPermissions?.denied || [];
+    
+    // Combine role permissions + custom allowed permissions
+    const allAllowed = [...rolePermissions, ...currentCustomAllowed];
+    
+    // Remove denied permissions from allowed list
+    const finalAllowed = allAllowed.filter(perm => !currentCustomDenied.includes(perm));
+    
+    // Remove duplicates
+    const uniqueAllowed = [...new Set(finalAllowed)];
+
+    console.log(`   ✅ UPDATED RESULT:`);
+    console.log(`   ➕ Custom allowed: ${user.customPermissions.allowed.length}`);
+    console.log(`   ➖ Custom denied: ${user.customPermissions.denied.length}`);
+    console.log(`   🎯 Final allowed: ${uniqueAllowed.length}`);
 
     res.json({
       success: true,
-      message: 'User effective permissions updated successfully',
+      message: 'User permissions updated successfully',
       user: {
         id: user._id,
         name: user.name,
@@ -434,19 +463,19 @@ const updateUserEffectivePermissions = async (req, res) => {
         level: user.level
       },
       permissions: {
-        effective: updatedEffectivePermissions,
-        custom: {
-          allowed: user.customPermissions.allowed,
-          denied: user.customPermissions.denied
-        },
-        role: {
-          permissions: rolePermissions
-        }
+        allowed: uniqueAllowed,
+        denied: currentCustomDenied
+      },
+      projectAccess: {
+        canAccessAll: user.role === 'superadmin' || user.level === 1,
+        allowedProjects: user.restrictions?.allowedProjects || [],
+        deniedProjects: user.restrictions?.deniedProjects || [],
+        maxProjects: user.restrictions?.maxProjects || null
       }
     });
   } catch (error) {
-    console.error('Update user effective permissions error:', error);
-    res.status(500).json({ message: 'Server error while updating effective permissions' });
+    console.error('Update user permissions error:', error);
+    res.status(500).json({ message: 'Server error while updating permissions' });
   }
 };
 
@@ -756,6 +785,103 @@ const getRoleDetails = async (req, res) => {
 };
 
 /**
+ * CLEAN ALL USER PERMISSIONS (Superadmin only)
+ */
+const cleanAllUserPermissions = async (req, res) => {
+  try {
+    // Only superadmin can clean all permissions
+    if (req.user.role !== 'superadmin' && req.user.level !== 1) {
+      return res.status(403).json({ message: 'Access denied: Only superadmin can clean all permissions' });
+    }
+
+    console.log('🧹 CLEANING ALL USER PERMISSIONS...');
+    
+    const users = await User.find({});
+    const Role = require('../models/Role');
+    
+    let cleanedUsers = 0;
+    let totalPermissionsRemoved = 0;
+    const results = [];
+
+    for (const user of users) {
+      console.log(`\n👤 Cleaning user: ${user.name} (${user.email}) - Role: ${user.role}`);
+      
+      // Get role permissions
+      const roleDef = await Role.findOne({ name: user.role });
+      const rolePermissions = roleDef?.permissions || [];
+      
+      // Get current effective permissions
+      const currentEffective = await user.getEffectivePermissions();
+      
+      // Clear custom permissions (start fresh)
+      const oldCustomAllowed = user.customPermissions?.allowed?.length || 0;
+      const oldCustomDenied = user.customPermissions?.denied?.length || 0;
+      
+      user.customPermissions = {
+        allowed: [],
+        denied: []
+      };
+      
+      await user.save();
+      
+      // Get new effective permissions
+      const newEffective = await user.getEffectivePermissions();
+      
+      // Calculate what was removed
+      const removed = currentEffective.filter(perm => !newEffective.includes(perm));
+      totalPermissionsRemoved += removed.length;
+      
+      results.push({
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        before: {
+          rolePermissions: rolePermissions.length,
+          customAllowed: oldCustomAllowed,
+          customDenied: oldCustomDenied,
+          effectiveTotal: currentEffective.length
+        },
+        after: {
+          rolePermissions: rolePermissions.length,
+          customAllowed: 0,
+          customDenied: 0,
+          effectiveTotal: newEffective.length
+        },
+        removed: removed.length,
+        efficiency: `${Math.round((rolePermissions.length / newEffective.length) * 100)}% role-based`
+      });
+      
+      console.log(`   ✅ Cleaned: ${removed.length} excessive permissions removed`);
+      console.log(`   📊 Efficiency: ${Math.round((rolePermissions.length / newEffective.length) * 100)}% role-based`);
+      
+      cleanedUsers++;
+    }
+
+    console.log(`\n🎉 CLEANING COMPLETED!`);
+    console.log(`   👥 Users cleaned: ${cleanedUsers}`);
+    console.log(`   🗑️ Total permissions removed: ${totalPermissionsRemoved}`);
+    console.log(`   📈 Average efficiency improvement: ${Math.round(totalPermissionsRemoved / cleanedUsers)} permissions per user`);
+
+    res.json({
+      success: true,
+      message: `Successfully cleaned permissions for ${cleanedUsers} users`,
+      summary: {
+        usersCleaned: cleanedUsers,
+        totalPermissionsRemoved,
+        averageRemovedPerUser: Math.round(totalPermissionsRemoved / cleanedUsers)
+      },
+      results: results
+    });
+
+  } catch (error) {
+    console.error('❌ Clean all permissions error:', error);
+    res.status(500).json({ message: 'Server error while cleaning all permissions' });
+  }
+};
+
+/**
  * Debug endpoint to test permission system
  */
 const debugPermissions = async (req, res) => {
@@ -844,5 +970,6 @@ module.exports = {
   updateRolePermissions,
   getAllRoles,
   getRoleDetails,
+  cleanAllUserPermissions,
   debugPermissions
 };
