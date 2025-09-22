@@ -105,7 +105,7 @@ const getChannelPartners = async (req, res) => {
     const totalItems = await ChannelPartner.countDocuments(query);
     const totalPages = Math.ceil(totalItems / limit);
     const channelPartners = await ChannelPartner.find(query)
-      .select('name phone firmName location address mahareraNo isActive pinCode customData photo createdBy updatedBy')
+      .select('name phone firmName location address mahareraNo isActive pinCode customData photo createdBy updatedBy createdAt updatedAt')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
       .sort({ name: 1 })
@@ -131,7 +131,7 @@ const getChannelPartners = async (req, res) => {
 const getChannelPartnerById = async (req, res) => {
   try {
     const channelPartner = await ChannelPartner.findById(req.params.id)
-      .select('name phone firmName location address mahareraNo pinCode isActive customData photo createdBy updatedBy')
+      .select('name phone firmName location address mahareraNo pinCode isActive customData photo createdBy updatedBy createdAt updatedAt')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
       .lean();

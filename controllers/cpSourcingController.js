@@ -218,7 +218,7 @@ const getCPSourcings = async (req, res) => {
     const totalItems = await CPSourcing.countDocuments(query);
     const totalPages = Math.ceil(totalItems / limit);
     const cpSourcings = await CPSourcing.find(query)
-      .select('userId channelPartnerId projectId sourcingHistory customData createdAt isActive')
+      .select('userId channelPartnerId projectId sourcingHistory customData createdAt isActive updatedBy createdBy updatedAt')
       .populate('userId', 'name email')
       .populate('channelPartnerId', 'name phone')
       .populate('projectId', 'name location')
@@ -247,7 +247,7 @@ const getCPSourcings = async (req, res) => {
 const getCPSourcingById = async (req, res) => {
   try {
     const cpSourcing = await CPSourcing.findById(req.params.id)
-      .select('userId channelPartnerId projectId sourcingHistory customData createdAt isActive')
+      .select('userId channelPartnerId projectId sourcingHistory customData createdAt isActive updatedBy createdBy updatedAt')
       .populate('userId', 'name email')
       .populate('channelPartnerId', 'name phone')
       .populate('projectId', 'name location')

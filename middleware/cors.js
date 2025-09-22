@@ -53,6 +53,28 @@ const corsDebug = (req, res, next) => {
   console.log('  Path:', req.path);
   console.log('  User-Agent:', req.headers['user-agent']);
   
+  // Handle preflight requests explicitly
+  if (req.method === 'OPTIONS') {
+    const origin = req.headers.origin;
+    const allowedOrigins = [
+      'https://www.realtechmktg.com',
+      'https://realtechmktg.com', 
+      'https://user.realtechmktg.com',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002'
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Origin, Accept');
+      res.header('Access-Control-Expose-Headers', 'Authorization, x-auth-token');
+      return res.status(200).end();
+    }
+  }
+  
   // Set CORS headers manually for critical endpoints
   if (req.path === '/api/superadmin/admin-login' || req.path.startsWith('/api/user/')) {
     const origin = req.headers.origin;

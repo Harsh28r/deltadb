@@ -188,6 +188,25 @@ app.get('/api/cors-test-realtech', (req, res) => {
   });
 });
 
+// Admin login CORS test endpoint
+app.get('/api/admin-login-test', (req, res) => {
+  console.log('🔍 Admin Login CORS test request:');
+  console.log('  Origin:', req.headers.origin);
+  console.log('  Method:', req.method);
+  console.log('  Headers:', req.headers);
+  
+  res.json({ 
+    message: 'Admin Login CORS test successful',
+    origin: req.headers.origin,
+    allowed: true,
+    timestamp: new Date().toISOString(),
+    corsHeaders: {
+      'Access-Control-Allow-Origin': req.headers.origin,
+      'Access-Control-Allow-Credentials': 'true'
+    }
+  });
+});
+
 // Database health check route fjf
 app.get('/api/health', async (req, res) => {
   try {
@@ -252,7 +271,10 @@ const startServer = () => {
 console.log('Starting MongoDB connection...');
 connectToMongoDB();
 
-// CORS preflight handler for admin-login endpoint
+// CORS preflight handler for all routes
+app.options('*', cors(corsOptions));
+
+// Special CORS preflight handler for admin-login endpoint
 app.options('/api/superadmin/admin-login', cors(adminLoginCorsOptions));
 
 // Export for Vercel
