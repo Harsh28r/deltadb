@@ -311,50 +311,71 @@ const markNotificationAsRead = async (req, res) => {
 // Get user profile
 const getUserProfile = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?._id || req.user?.id;
+
+    console.log('🔍 getUserProfile - User ID:', userId);
+    console.log('🔍 getUserProfile - User details:', req.user);
+    console.log('🔍 getUserProfile - User ID type:', typeof userId);
+    console.log('🔍 getUserProfile - Available user fields:', Object.keys(req.user || {}));
+    
+    if (!userId) {
+      console.log('❌ No user ID found in request');
+      return res.status(401).json({ message: 'User ID not found in token' });
+    }
     
     const user = await User.findById(userId).populate('roleRef');
+    console.log('🔍 getUserProfile - Found user:', user ? 'YES' : 'NO');
+    console.log('🔍 getUserProfile - User object:', user);
+    
     if (!user) {
+      console.log('❌ User not found in database with ID:', userId);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Get user's actual effective permissions (including denied ones)
-    const effectivePermissions = await user.getEffectivePermissions();
+    // Get role permissions
     const rolePermissions = user.roleRef ? user.roleRef.permissions || [] : [];
     
     // Get custom permissions for reference
     const customPermissions = user.customPermissions || { allowed: [], denied: [] };
+    
+    // Calculate effective permissions (role permissions + custom allowed - custom denied)
+    const effectivePermissions = [
+      ...new Set([
+        ...rolePermissions,
+        ...customPermissions.allowed
+      ])
+    ].filter(permission => !customPermissions.denied.includes(permission));
 
     res.json({
-      message: 'User profile retrieved successfully',
+      success: true,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         level: user.level,
-        mobile: user.mobile,
-        companyName: user.companyName,
-        // Role permissions (what the role gives - not denied)
-        rolePermissions: rolePermissions,
-        // Effective permissions (what user can actually access)
-        permissions: effectivePermissions,
-        // Denied permissions (what user cannot access)
-        deniedPermissions: customPermissions.denied,
-        // Additional permission info for debugging
-        permissionDetails: {
-          rolePermissions: rolePermissions,
-          customAllowed: customPermissions.allowed,
-          customDenied: customPermissions.denied,
-          effective: effectivePermissions
-        },
-        createdAt: user.createdAt
+        isActive: user.isActive
+      },
+      permissions: {
+        allowed: effectivePermissions,
+        denied: customPermissions.denied
+      },
+      projectAccess: {
+        canAccessAll: user.canAccessAllProjects || false,
+        allowedProjects: user.allowedProjects || [],
+        deniedProjects: user.deniedProjects || [],
+        maxProjects: user.maxProjects || null
       }
     });
 
   } catch (error) {
-    console.error('Get user profile error:', error);
-    res.status(500).json({ message: 'Server error while fetching user profile' });
+    console.error('❌ Get user profile error:', error);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Error message:', error.message);
+    res.status(500).json({ 
+      message: 'Server error while fetching user profile',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 };
 

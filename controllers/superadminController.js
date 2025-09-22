@@ -196,33 +196,83 @@ const initSuperadmin = async (req, res) => {
         name: 'superadmin',
         level: 1,
         permissions: [
+          // Role and user management
           "role:manage",
+          "users:manage",
+          
+          // Project management
           "projects:manage",
-          "notifications:read",
-          "notifications:update",
+          
+          // Lead management
           "leads:create",
           "leads:read",
           "leads:update",
+          "leads:delete",
           "leads:bulk",
           "leads:transfer",
-          "leadsSource:create",
+          "leads:bulk-delete",
+          
+          // Lead source management
+          "leadssource:create",
           "leadssource:read_all",
           "leadssource:read",
           "leadssource:update",
           "leadssource:delete",
-          "leadsStatus:create",
+          
+          // Lead status management
+          "leadsstatus:create",
           "leadsstatus:read_all",
           "leadsstatus:read",
           "leadsstatus:update",
           "leadsstatus:delete",
+          
+          // Lead activities
+          "lead-activities:read",
+          "lead-activities:bulk-update",
+          "lead-activities:bulk-delete",
+          
+          // Channel partner management
+          "channel-partner:create",
+          "channel-partner:read_all",
+          "channel-partner:read",
+          "channel-partner:update",
+          "channel-partner:delete",
+          "channel-partner:bulk-create",
+          "channel-partner:bulk-update",
+          "channel-partner:bulk-delete",
+          
+          // CP sourcing management
+          "cp-sourcing:create",
+          "cp-sourcing:read",
+          "cp-sourcing:update",
+          "cp-sourcing:delete",
+          "cp-sourcing:bulk-create",
+          "cp-sourcing:bulk-update",
+          "cp-sourcing:bulk-delete",
+          
+          // User project management
           "user-projects:assign",
           "user-projects:read",
           "user-projects:remove",
           "user-projects:bulk-update",
           "user-projects:bulk-delete",
-          "reporting:read",
+          
+          // User reporting
+          "user-reporting:create",
+          "user-reporting:read",
+          "user-reporting:update",
+          "user-reporting:delete",
+          "user-reporting:bulk-update",
+          "user-reporting:bulk-delete",
+          
+          // Notifications
+          "notifications:read",
+          "notifications:update",
           "notifications:bulk-update",
-          "notifications:bulk-delete"
+          "notifications:bulk-delete",
+          
+          // General reporting
+          "reporting:read"
         ],
       });
     }
@@ -375,33 +425,83 @@ const adminLogin = async (req, res) => {
           name: 'superadmin',
           level: 1,
           permissions: [
+          // Role and user management
           "role:manage",
+          "users:manage",
+          
+          // Project management
           "projects:manage",
-          "notifications:read",
-          "notifications:update",
+          
+          // Lead management
           "leads:create",
           "leads:read",
           "leads:update",
+          "leads:delete",
           "leads:bulk",
           "leads:transfer",
-          "leadsSource:create",
+          "leads:bulk-delete",
+          
+          // Lead source management
+          "leadssource:create",
           "leadssource:read_all",
           "leadssource:read",
           "leadssource:update",
           "leadssource:delete",
-          "leadsStatus:create",
+          
+          // Lead status management
+          "leadsstatus:create",
           "leadsstatus:read_all",
           "leadsstatus:read",
           "leadsstatus:update",
           "leadsstatus:delete",
+          
+          // Lead activities
+          "lead-activities:read",
+          "lead-activities:bulk-update",
+          "lead-activities:bulk-delete",
+          
+          // Channel partner management
+          "channel-partner:create",
+          "channel-partner:read_all",
+          "channel-partner:read",
+          "channel-partner:update",
+          "channel-partner:delete",
+          "channel-partner:bulk-create",
+          "channel-partner:bulk-update",
+          "channel-partner:bulk-delete",
+          
+          // CP sourcing management
+          "cp-sourcing:create",
+          "cp-sourcing:read",
+          "cp-sourcing:update",
+          "cp-sourcing:delete",
+          "cp-sourcing:bulk-create",
+          "cp-sourcing:bulk-update",
+          "cp-sourcing:bulk-delete",
+          
+          // User project management
           "user-projects:assign",
           "user-projects:read",
           "user-projects:remove",
           "user-projects:bulk-update",
           "user-projects:bulk-delete",
-          "reporting:read",
+          
+          // User reporting
+          "user-reporting:create",
+          "user-reporting:read",
+          "user-reporting:update",
+          "user-reporting:delete",
+          "user-reporting:bulk-update",
+          "user-reporting:bulk-delete",
+          
+          // Notifications
+          "notifications:read",
+          "notifications:update",
           "notifications:bulk-update",
-          "notifications:bulk-delete"
+          "notifications:bulk-delete",
+          
+          // General reporting
+          "reporting:read"
         ],
         });
         console.log('Superadmin role created successfully');
@@ -1385,33 +1485,83 @@ const updateSuperadminPermissions = async (req, res) => {
     }
 
     const newPermissions = [
+      // Role and user management
       "role:manage",
+      "users:manage",
+      
+      // Project management
       "projects:manage",
-      "notifications:read",
-      "notifications:update",
+      
+      // Lead management
       "leads:create",
       "leads:read",
       "leads:update",
+      "leads:delete",
       "leads:bulk",
       "leads:transfer",
-      "leadsSource:create",
+      "leads:bulk-delete",
+      
+      // Lead source management
+      "leadssource:create",
       "leadssource:read_all",
       "leadssource:read",
       "leadssource:update",
       "leadssource:delete",
-      "leadsStatus:create",
+      
+      // Lead status management
+      "leadsstatus:create",
       "leadsstatus:read_all",
       "leadsstatus:read",
       "leadsstatus:update",
       "leadsstatus:delete",
+      
+      // Lead activities
+      "lead-activities:read",
+      "lead-activities:bulk-update",
+      "lead-activities:bulk-delete",
+      
+      // Channel partner management
+      "channel-partner:create",
+      "channel-partner:read_all",
+      "channel-partner:read",
+      "channel-partner:update",
+      "channel-partner:delete",
+      "channel-partner:bulk-create",
+      "channel-partner:bulk-update",
+      "channel-partner:bulk-delete",
+      
+      // CP sourcing management
+      "cp-sourcing:create",
+      "cp-sourcing:read",
+      "cp-sourcing:update",
+      "cp-sourcing:delete",
+      "cp-sourcing:bulk-create",
+      "cp-sourcing:bulk-update",
+      "cp-sourcing:bulk-delete",
+      
+      // User project management
       "user-projects:assign",
       "user-projects:read",
       "user-projects:remove",
       "user-projects:bulk-update",
       "user-projects:bulk-delete",
-      "reporting:read",
+      
+      // User reporting
+      "user-reporting:create",
+      "user-reporting:read",
+      "user-reporting:update",
+      "user-reporting:delete",
+      "user-reporting:bulk-update",
+      "user-reporting:bulk-delete",
+      
+      // Notifications
+      "notifications:read",
+      "notifications:update",
       "notifications:bulk-update",
-      "notifications:bulk-delete"
+      "notifications:bulk-delete",
+      
+      // General reporting
+      "reporting:read"
     ];
 
     // Update permissions
