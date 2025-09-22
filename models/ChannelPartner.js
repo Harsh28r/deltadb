@@ -16,31 +16,31 @@ const channelPartnerSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Check lead activity for isActive status on save
-channelPartnerSchema.pre('save', async function(next) {
-  const Lead = mongoose.model('Lead');
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const recentLead = await Lead.findOne({
-    channelPartner: this._id,
-    updatedAt: { $gte: thirtyDaysAgo }
-  });
-  this.isActive = !!recentLead; // Set true if recent lead exists
-  next();
-});
+// channelPartnerSchema.pre('save', async function(next) {
+//   const Lead = mongoose.model('Lead');
+//   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+//   const recentLead = await Lead.findOne({
+//     channelPartner: this._id,
+//     updatedAt: { $gte: thirtyDaysAgo }
+//   });
+//   this.isActive = !!recentLead; // Set true if recent lead exists
+//   next();
+// });
 
 // Check lead activity for isActive status on update
-channelPartnerSchema.pre('findOneAndUpdate', async function(next) {
-  const Lead = mongoose.model('Lead');
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const doc = await this.model.findOne(this.getQuery());
-  if (doc) {
-    const recentLead = await Lead.findOne({
-      channelPartner: doc._id,
-      updatedAt: { $gte: thirtyDaysAgo }
-    });
-    this.set({ isActive: !!recentLead }); // Update isActive
-  }
-  next();
-});
+// channelPartnerSchema.pre('findOneAndUpdate', async function(next) {
+//   const Lead = mongoose.model('Lead');
+//   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+//   const doc = await this.model.findOne(this.getQuery());
+//   if (doc) {
+//     const recentLead = await Lead.findOne({
+//       channelPartner: doc._id,
+//       updatedAt: { $gte: thirtyDaysAgo }
+//     });
+//     this.set({ isActive: !!recentLead }); // Update isActive
+//   }
+//   next();
+// });
 
 // Indexes for performance
 channelPartnerSchema.index({ phone: 1 });

@@ -21,31 +21,31 @@ const cpSourcingSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Check lead activity for isActive status on save
-cpSourcingSchema.pre('save', async function(next) {
-  const Lead = mongoose.model('Lead');
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const recentLead = await Lead.findOne({
-    cpSourcingId: this._id,
-    createdAt: { $gte: thirtyDaysAgo }
-  });
-  this.isActive = !!recentLead; // Set true if recent lead exists
-  next();
-});
+// cpSourcingSchema.pre('save', async function(next) {
+//   const Lead = mongoose.model('Lead');
+//   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+//   const recentLead = await Lead.findOne({
+//     cpSourcingId: this._id,
+//     createdAt: { $gte: thirtyDaysAgo }
+//   });
+//   this.isActive = !!recentLead; // Set true if recent lead exists
+//   next();
+// });
 
 // Check lead activity for isActive status on update
-cpSourcingSchema.pre('findOneAndUpdate', async function(next) {
-  const Lead = mongoose.model('Lead');
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const doc = await this.model.findOne(this.getQuery());
-  if (doc) {
-    const recentLead = await Lead.findOne({
-      cpSourcingId: doc._id,
-      createdAt: { $gte: thirtyDaysAgo }
-    });
-    this.set({ isActive: !!recentLead }); // Update isActive
-  }
-  next();
-});
+// cpSourcingSchema.pre('findOneAndUpdate', async function(next) {
+//   const Lead = mongoose.model('Lead');
+//   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+//   const doc = await this.model.findOne(this.getQuery());
+//   if (doc) {
+//     const recentLead = await Lead.findOne({
+//       cpSourcingId: doc._id,
+//       createdAt: { $gte: thirtyDaysAgo }
+//     });
+//     this.set({ isActive: !!recentLead }); // Update isActive
+//   }
+//   next();
+// });
 
 // Validate project assignment
 cpSourcingSchema.pre('save', async function(next) {
