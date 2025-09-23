@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Role = require('../models/Role');
+const UserReporting = require('../models/UserReporting');
 const { getAvailableRolesForLevel } = require('../middleware/roleLevelAuth');
 
 // Environment variables
@@ -27,6 +28,10 @@ const registerUser = async (req, res) => {
     }
 
     // Create new user with default role (password will be hashed by User model middleware)
+    // Get the user role permissions
+    const userRole = await Role.findOne({ name: 'user' });
+    const userRolePermissions = userRole ? userRole.permissions : [];
+    
     const user = new User({
       name,
       email: email.toLowerCase(),
@@ -34,7 +39,11 @@ const registerUser = async (req, res) => {
       mobile,
       companyName,
       role: 'user',
-      level: 3
+      level: 3,
+      customPermissions: {
+        allowed: userRolePermissions, // Store role permissions in allowed
+        denied: []
+      }
     });
 
     await user.save();
@@ -71,114 +80,114 @@ const registerUser = async (req, res) => {
 };
 
 // Register a new manager
-const registerManager = async (req, res) => {
-  const { name, email, password, mobile, companyName } = req.body;
+// const registerManager = async (req, res) => {
+//   const { name, email, password, mobile, companyName } = req.body;
 
-  try {
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
+//   try {
+//     // Check if user already exists
+//     const existingUser = await User.findOne({ email: email.toLowerCase() });
+//     if (existingUser) {
+//       return res.status(400).json({ message: 'User already exists' });
+//     }
 
-    // Create new manager (password will be hashed by User model middleware)
-    const user = new User({
-      name,
-      email: email.toLowerCase(),
-      password: password,
-      mobile,
-      companyName,
-      role: 'manager',
-      level: 2
-    });
+//     // Create new manager (password will be hashed by User model middleware)
+//     const user = new User({
+//       name,
+//       email: email.toLowerCase(),
+//       password: password,
+//       mobile,
+//       companyName,
+//       role: 'manager',
+//       level: 2
+//     });
 
-    await user.save();
+//     await user.save();
 
-    // Generate JWT token
-    const payload = {
-      id: user._id,
-      email: user.email,
-      role: user.role,
-      level: user.level
-    };
+//     // Generate JWT token
+//     const payload = {
+//       id: user._id,
+//       email: user.email,
+//       role: user.role,
+//       level: user.level
+//     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
-    setTokenHeaders(res, token);
+//     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+//     setTokenHeaders(res, token);
 
-    res.status(201).json({
-      message: 'Manager registered successfully',
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        level: user.level,
-        mobile: user.mobile,
-        companyName: user.companyName
-      },
-      token
-    });
+//     res.status(201).json({
+//       message: 'Manager registered successfully',
+//       user: {
+//         id: user._id,
+//         name: user.name,
+//         email: user.email,
+//         role: user.role,
+//         level: user.level,
+//         mobile: user.mobile,
+//         companyName: user.companyName
+//       },
+//       token
+//     });
 
-  } catch (error) {
-    console.error('Manager registration error:', error);
-    res.status(500).json({ message: 'Server error during manager registration' });
-  }
-};
+//   } catch (error) {
+//     console.error('Manager registration error:', error);
+//     res.status(500).json({ message: 'Server error during manager registration' });
+//   }
+// };
 
 // Register a new sales person
-const registerSales = async (req, res) => {
-  const { name, email, password, mobile, companyName } = req.body;
+// const registerSales = async (req, res) => {
+//   const { name, email, password, mobile, companyName } = req.body;
 
-  try {
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
+//   try {
+//     // Check if user already exists
+//     const existingUser = await User.findOne({ email: email.toLowerCase() });
+//     if (existingUser) {
+//       return res.status(400).json({ message: 'User already exists' });
+//     }
 
-    // Create new sales person (password will be hashed by User model middleware)
-    const user = new User({
-      name,
-      email: email.toLowerCase(),
-      password: password,
-      mobile,
-      companyName,
-      role: 'sales',
-      level: 4
-    });
+//     // Create new sales person (password will be hashed by User model middleware)
+//     const user = new User({
+//       name,
+//       email: email.toLowerCase(),
+//       password: password,
+//       mobile,
+//       companyName,
+//       role: 'sales',
+//       level: 4
+//     });
 
-    await user.save();
+//     await user.save();
 
-    // Generate JWT token
-    const payload = {
-      id: user._id,
-      email: user.email,
-      role: user.role,
-      level: user.level
-    };
+//     // Generate JWT token
+//     const payload = {
+//       id: user._id,
+//       email: user.email,
+//       role: user.role,
+//       level: user.level
+//     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
-    setTokenHeaders(res, token);
+//     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+//     setTokenHeaders(res, token);
 
-    res.status(201).json({
-      message: 'Sales person registered successfully',
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        level: user.level,
-        mobile: user.mobile,
-        companyName: user.companyName
-      },
-      token
-    });
+//     res.status(201).json({
+//       message: 'Sales person registered successfully',
+//       user: {
+//         id: user._id,
+//         name: user.name,
+//         email: user.email,
+//         role: user.role,
+//         level: user.level,
+//         mobile: user.mobile,
+//         companyName: user.companyName
+//       },
+//       token
+//     });
 
-  } catch (error) {
-    console.error('Sales registration error:', error);
-    res.status(500).json({ message: 'Server error during sales registration' });
-  }
-};
+//   } catch (error) {
+//     console.error('Sales registration error:', error);
+//     res.status(500).json({ message: 'Server error during sales registration' });
+//   }
+// };
 
 // Initialize superadmin (first-time setup)
 const initSuperadmin = async (req, res) => {
@@ -803,7 +812,11 @@ const createUserWithRole = async (req, res) => {
       companyName,
       role: role.name,
       roleRef: role._id,
-      level: role.level
+      level: role.level,
+      customPermissions: {
+        allowed: role.permissions, // Store role permissions in allowed
+        denied: []
+      }
     });
 
     await user.save();
@@ -832,6 +845,15 @@ const createUserWithRole = async (req, res) => {
       console.log(`UserReporting created for user ${user._id} with superadmin ${superadmin._id}`);
     }
 
+    // Get role details for response
+    const userRole = await Role.findById(user.roleRef);
+    const rolePermissions = userRole ? userRole.permissions : [];
+    
+    // Calculate allowed permissions: role permissions minus denied permissions
+    const allowedPermissions = rolePermissions.filter(permission => 
+      !(user.customPermissions?.denied || []).includes(permission)
+    );
+
     res.status(201).json({
       message: 'User created successfully',
       user: {
@@ -841,7 +863,16 @@ const createUserWithRole = async (req, res) => {
         role: user.role,
         level: user.level,
         mobile: user.mobile,
-        companyName: user.companyName
+        companyName: user.companyName,
+        customPermissions: {
+          allowed: allowedPermissions, // Role permissions minus denied
+          denied: user.customPermissions?.denied || [] // User-specific denied permissions
+        }
+      },
+      summary: {
+        rolePermissionsCount: rolePermissions.length,
+        totalAllowed: allowedPermissions.length,
+        totalDenied: user.customPermissions?.denied?.length || 0
       }
     });
 
@@ -905,6 +936,18 @@ const editUserWithRole = async (req, res) => {
       user.role = newRole.name;
       user.roleRef = newRole._id;
       user.level = newRole.level;
+      
+      // Update customPermissions when role changes
+      if (!user.customPermissions) {
+        user.customPermissions = { allowed: [], denied: [] };
+      }
+      
+      // Calculate allowed permissions: role permissions minus denied permissions
+      const allowedPermissions = newRole.permissions.filter(permission => 
+        !(user.customPermissions.denied || []).includes(permission)
+      );
+      
+      user.customPermissions.allowed = allowedPermissions;
     }
 
     await user.save();
@@ -968,7 +1011,7 @@ const getUserById = async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     // Get role details
-    const role = await Role.findById(user.roleRef);
+    const userRole = await Role.findById(user.roleRef);
     
     res.json({
       user: {
@@ -980,12 +1023,16 @@ const getUserById = async (req, res) => {
         role: user.role,
         level: user.level,
         createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        updatedAt: user.updatedAt,
+        customPermissions: {
+          allowed: user.customPermissions?.allowed || [], // Use stored permissions
+          denied: user.customPermissions?.denied || [] // User-specific denied permissions
+        }
       },
-      role: role ? {
-        name: role.name,
-        level: role.level,
-        permissions: role.permissions
+      role: userRole ? {
+        name: userRole.name,
+        level: userRole.level,
+        permissions: userRole.permissions
       } : null
     });
   } catch (error) {
@@ -1012,16 +1059,22 @@ const getUsersByRole = async (req, res) => {
         level: role.level,
         permissions: role.permissions
       },
-      users: users.map(user => ({
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        mobile: user.mobile,
-        companyName: user.companyName,
-        role: user.role,
-        level: user.level,
-        createdAt: user.createdAt
-      })),
+      users: users.map(user => {
+        return {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          mobile: user.mobile,
+          companyName: user.companyName,
+          role: user.role,
+          level: user.level,
+          createdAt: user.createdAt,
+          customPermissions: {
+            allowed: user.customPermissions?.allowed || [], // Use stored permissions
+            denied: user.customPermissions?.denied || [] // User-specific denied permissions
+          }
+        };
+      }),
       count: users.length
     });
 
@@ -1048,16 +1101,22 @@ const getAllUsersGroupedByRole = async (_req, res) => {
           level: role.level,
           permissions: role.permissions
         },
-        users: roleUsers.map(user => ({
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          mobile: user.mobile,
-          companyName: user.companyName,
-          role: user.role,
-          level: user.level,
-          createdAt: user.createdAt
-        })),
+        users: roleUsers.map(user => {
+          return {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            mobile: user.mobile,
+            companyName: user.companyName,
+            role: user.role,
+            level: user.level,
+            createdAt: user.createdAt,
+            customPermissions: {
+              allowed: user.customPermissions?.allowed || [], // Use stored permissions
+              denied: user.customPermissions?.denied || [] // User-specific denied permissions
+            }
+          };
+        }),
         count: roleUsers.length
       };
     }
@@ -1421,7 +1480,7 @@ const getAllUsersWithHistory = async (req, res) => {
       });
 
       // Get user's role
-      const role = await Role.findById(user.roleRef);
+      const userRole = await Role.findById(user.roleRef);
 
       const userHistory = {
         _id: user._id,
@@ -1432,7 +1491,11 @@ const getAllUsersWithHistory = async (req, res) => {
         currentRole: {
           name: user.role,
           level: user.level,
-          permissions: role ? role.permissions : []
+          permissions: userRole ? userRole.permissions : []
+        },
+        customPermissions: {
+          allowed: user.customPermissions?.allowed || [], // Use stored permissions
+          denied: user.customPermissions?.denied || [] // User-specific denied permissions
         },
         projectSummary: {
           totalProjects: projects.length,
@@ -1615,7 +1678,7 @@ const getUsersWithProjects = async (req, res) => {
         .sort({ assignedAt: -1 });
 
       // Get user's role details
-      const role = await Role.findById(user.roleRef);
+      const userRole = await Role.findById(user.roleRef);
 
       const userWithProjects = {
         _id: user._id,
@@ -1626,8 +1689,12 @@ const getUsersWithProjects = async (req, res) => {
         currentRole: {
           name: user.role,
           level: user.level,
-          permissions: role ? role.permissions : [],
+          permissions: userRole ? userRole.permissions : [],
           roleId: user.roleRef
+        },
+        customPermissions: {
+          allowed: user.customPermissions?.allowed || [], // Use stored permissions
+          denied: user.customPermissions?.denied || [] // User-specific denied permissions
         },
         projectAssignments: userProjects.map(up => ({
           assignmentId: up._id,
@@ -1681,7 +1748,8 @@ const createUserWithProjects = async (req, res) => {
     mobile, 
     companyName, 
     roleName, 
-    projects 
+    projects ,
+    level
   } = req.body || {};
   
   try {
@@ -1712,7 +1780,11 @@ const createUserWithProjects = async (req, res) => {
       companyName,
       role: role.name,
       roleRef: role._id,
-      level: role.level
+      level: level,
+      customPermissions: {
+        allowed: role.permissions, // Store role permissions in allowed
+        denied: []
+      }
     });
 
     await user.save();
@@ -1781,7 +1853,7 @@ const createUserWithProjects = async (req, res) => {
     }
 
     // Skip UserReporting for superadmin
-    if (role !== 'superadmin' && level > 1) {
+    if (roleName !== 'superadmin' && level > 1) {
       const superadmin = await User.findOne({ role: 'superadmin', level: 1 });
       if (!superadmin) {
         await User.deleteOne({ _id: user._id });
@@ -1804,6 +1876,15 @@ const createUserWithProjects = async (req, res) => {
       console.log(`UserReporting created for user ${user._id} with superadmin ${superadmin._id}`);
     }
 
+    // Get role details for response
+    const userRole = await Role.findById(user.roleRef);
+    const rolePermissions = userRole ? userRole.permissions : [];
+    
+    // Calculate allowed permissions: role permissions minus denied permissions
+    const allowedPermissions = rolePermissions.filter(permission => 
+      !(user.customPermissions?.denied || []).includes(permission)
+    );
+
     res.status(201).json({
       message: 'User created successfully with project assignments',
       user: {
@@ -1813,13 +1894,20 @@ const createUserWithProjects = async (req, res) => {
         role: user.role,
         level: user.level,
         mobile: user.mobile,
-        companyName: user.companyName
+        companyName: user.companyName,
+        customPermissions: {
+          allowed: allowedPermissions, // Role permissions minus denied
+          denied: user.customPermissions?.denied || [] // User-specific denied permissions
+        }
       },
       projectAssignments: projectAssignments,
       summary: {
         userCreated: true,
         projectsAssigned: projectAssignments.length,
-        totalProjects: Array.isArray(projects) ? projects.filter(Boolean).length : 0
+        totalProjects: Array.isArray(projects) ? projects.filter(Boolean).length : 0,
+        rolePermissionsCount: rolePermissions.length,
+        totalAllowed: allowedPermissions.length,
+        totalDenied: user.customPermissions?.denied?.length || 0
       }
     });
 
@@ -2132,6 +2220,440 @@ const assignProjectsToUser = async (req, res) => {
   }
 };
 
+// Update user's custom permissions
+const updateUserCustomPermissions = async (req, res) => {
+  const { userId } = req.params;
+  const { denied } = req.body || {}; // Only handle denied permissions
+  
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent editing superadmin user's permissions
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot modify superadmin permissions' });
+    }
+
+    // Initialize customPermissions if it doesn't exist
+    if (!user.customPermissions) {
+      user.customPermissions = { allowed: [], denied: [] };
+    }
+
+    // Only update denied permissions (allowed will always be role permissions)
+    if (denied !== undefined) {
+      if (!Array.isArray(denied)) {
+        return res.status(400).json({ message: 'Denied permissions must be an array' });
+      }
+      user.customPermissions.denied = denied.map(p => String(p).toLowerCase().trim()).filter(Boolean);
+    }
+
+    await user.save();
+
+    // Get role permissions for response
+    const userRole = await Role.findById(user.roleRef);
+    const rolePermissions = userRole ? userRole.permissions : [];
+
+    res.json({
+      message: 'User custom permissions updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      customPermissions: {
+        allowed: rolePermissions, // Always role permissions
+        denied: user.customPermissions.denied // User-specific denied permissions
+      },
+      summary: {
+        rolePermissionsCount: rolePermissions.length,
+        totalDenied: user.customPermissions.denied.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Update user custom permissions error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Add custom permission to user
+const addUserCustomPermission = async (req, res) => {
+  const { userId } = req.params;
+  const { permission, type = 'allowed' } = req.body || {};
+  
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    if (!permission) {
+      return res.status(400).json({ message: 'Permission is required' });
+    }
+
+    if (!['allowed', 'denied'].includes(type)) {
+      return res.status(400).json({ message: 'Type must be either "allowed" or "denied"' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent editing superadmin user's permissions
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot modify superadmin permissions' });
+    }
+
+    // Initialize customPermissions if it doesn't exist
+    if (!user.customPermissions) {
+      user.customPermissions = { allowed: [], denied: [] };
+    }
+
+    const normalizedPermission = String(permission).toLowerCase().trim();
+
+    // Check if permission already exists in the opposite type
+    const oppositeType = type === 'allowed' ? 'denied' : 'allowed';
+    if (user.customPermissions[oppositeType].includes(normalizedPermission)) {
+      return res.status(400).json({ 
+        message: `Permission "${permission}" already exists in ${oppositeType} permissions. Remove it first.` 
+      });
+    }
+
+    // Add permission if not already present
+    if (!user.customPermissions[type].includes(normalizedPermission)) {
+      user.customPermissions[type].push(normalizedPermission);
+      await user.save();
+    }
+
+    res.json({
+      message: `Permission "${permission}" added to ${type} permissions`,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      customPermissions: {
+        allowed: user.customPermissions.allowed,
+        denied: user.customPermissions.denied
+      },
+      addedPermission: {
+        permission: normalizedPermission,
+        type: type
+      }
+    });
+
+  } catch (error) {
+    console.error('Add user custom permission error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Remove custom permission from user
+const removeUserCustomPermission = async (req, res) => {
+  const { userId } = req.params;
+  const { permission, type = 'allowed' } = req.body || {};
+  
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    if (!permission) {
+      return res.status(400).json({ message: 'Permission is required' });
+    }
+
+    if (!['allowed', 'denied'].includes(type)) {
+      return res.status(400).json({ message: 'Type must be either "allowed" or "denied"' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent editing superadmin user's permissions
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot modify superadmin permissions' });
+    }
+
+    // Initialize customPermissions if it doesn't exist
+    if (!user.customPermissions) {
+      user.customPermissions = { allowed: [], denied: [] };
+    }
+
+    const normalizedPermission = String(permission).toLowerCase().trim();
+
+    // Remove permission if it exists
+    const initialLength = user.customPermissions[type].length;
+    user.customPermissions[type] = user.customPermissions[type].filter(p => p !== normalizedPermission);
+    
+    if (user.customPermissions[type].length === initialLength) {
+      return res.status(404).json({ 
+        message: `Permission "${permission}" not found in ${type} permissions` 
+      });
+    }
+
+    await user.save();
+
+    res.json({
+      message: `Permission "${permission}" removed from ${type} permissions`,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      customPermissions: {
+        allowed: user.customPermissions.allowed,
+        denied: user.customPermissions.denied
+      },
+      removedPermission: {
+        permission: normalizedPermission,
+        type: type
+      }
+    });
+
+  } catch (error) {
+    console.error('Remove user custom permission error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Get user's effective permissions (role + custom)
+const getUserEffectivePermissions = async (req, res) => {
+  const { userId } = req.params;
+  
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Get role details
+    const userRole = await Role.findById(user.roleRef);
+    const rolePermissions = userRole ? userRole.permissions : [];
+    
+    // Get effective permissions
+    const effectivePermissions = await user.getEffectivePermissions();
+
+    // Role permissions go directly into allowed (no custom allowed needed)
+    const allowedPermissions = rolePermissions; // Only role permissions in allowed
+
+    res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      customPermissions: {
+        allowed: allowedPermissions, // Only role permissions
+        denied: user.customPermissions?.denied || [] // User-specific denied permissions
+      },
+      summary: {
+        rolePermissionsCount: rolePermissions.length,
+        customDeniedCount: user.customPermissions?.denied?.length || 0,
+        totalAllowedCount: allowedPermissions.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user effective permissions error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Direct update of user custom permissions (simple approach)
+const updateUserPermissionsDirect = async (req, res) => {
+  const { userId } = req.params;
+  const { denied } = req.body || {}; // Only handle denied permissions
+  
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent editing superadmin user's permissions
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Cannot modify superadmin permissions' });
+    }
+
+    // Initialize customPermissions if it doesn't exist
+    if (!user.customPermissions) {
+      user.customPermissions = { allowed: [], denied: [] };
+    }
+
+    // Get role details first
+    const userRole = await Role.findById(user.roleRef);
+    const rolePermissions = userRole ? userRole.permissions : [];
+
+    // Only update denied permissions
+    if (denied !== undefined) {
+      user.customPermissions.denied = Array.isArray(denied) 
+        ? denied.map(p => String(p).toLowerCase().trim()).filter(Boolean)
+        : [];
+    }
+
+    // Calculate allowed permissions: role permissions minus denied permissions
+    const allowedPermissions = rolePermissions.filter(permission => 
+      !user.customPermissions.denied.includes(permission)
+    );
+
+    // Update the allowed permissions in the database
+    user.customPermissions.allowed = allowedPermissions;
+
+    await user.save();
+
+    res.json({
+      message: 'User permissions updated successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level,
+        customPermissions: {
+          allowed: allowedPermissions, // Role permissions minus denied
+          denied: user.customPermissions.denied // User-specific denied permissions
+        }
+      },
+      summary: {
+        rolePermissionsCount: rolePermissions.length,
+        totalAllowed: allowedPermissions.length,
+        totalDenied: user.customPermissions.denied.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Update user permissions direct error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Update all existing users to populate customPermissions.allowed with role permissions
+const updateAllUsersWithRolePermissions = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Access denied. Superadmin role required.' });
+    }
+
+    const users = await User.find();
+    let updatedCount = 0;
+    let errors = [];
+
+    for (const user of users) {
+      try {
+        // Get user's role
+        const userRole = await Role.findById(user.roleRef);
+        if (!userRole) {
+          errors.push(`User ${user.email}: Role not found`);
+          continue;
+        }
+
+        // Initialize customPermissions if it doesn't exist
+        if (!user.customPermissions) {
+          user.customPermissions = { allowed: [], denied: [] };
+        }
+
+        // Update allowed permissions with role permissions
+        user.customPermissions.allowed = userRole.permissions;
+        
+        await user.save();
+        updatedCount++;
+        
+        console.log(`Updated user ${user.email} with ${userRole.permissions.length} role permissions`);
+      } catch (error) {
+        errors.push(`User ${user.email}: ${error.message}`);
+        console.error(`Error updating user ${user.email}:`, error);
+      }
+    }
+
+    res.json({
+      message: 'User permissions update completed',
+      summary: {
+        totalUsers: users.length,
+        updatedUsers: updatedCount,
+        errors: errors.length,
+        errorDetails: errors
+      }
+    });
+
+  } catch (error) {
+    console.error('Update all users with role permissions error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Check if user has specific permission
+const checkUserPermission = async (req, res) => {
+  const { userId } = req.params;
+  const { permission } = req.body || {};
+  
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    if (!permission) {
+      return res.status(400).json({ message: 'Permission is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check permission
+    const hasPermission = await user.hasPermission(permission);
+
+    res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        level: user.level
+      },
+      permission: permission,
+      hasPermission: hasPermission,
+      explanation: hasPermission 
+        ? `User has "${permission}" permission through role or custom permissions`
+        : `User does not have "${permission}" permission`
+    });
+
+  } catch (error) {
+    console.error('Check user permission error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
 // Get all projects with user assignment status and handle assignment
 const getUserProjectsAssignment = async (req, res) => {
   const { userId } = req.params;
@@ -2360,8 +2882,6 @@ const getUserProjectsAssignment = async (req, res) => {
 module.exports = {
   registerUser,
   loginUser,
-  registerManager,
-  registerSales,
   initSuperadmin,
   createRole,
   editRole,
@@ -2386,4 +2906,12 @@ module.exports = {
   assignProjectsToUser,
   getindividualRoleById,
   getUserProjectsAssignment,
+  // Custom permissions management
+  updateUserCustomPermissions,
+  addUserCustomPermission,
+  removeUserCustomPermission,
+  getUserEffectivePermissions,
+  checkUserPermission,
+  updateUserPermissionsDirect,
+  updateAllUsersWithRolePermissions,
 };

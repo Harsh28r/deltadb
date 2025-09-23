@@ -17,6 +17,7 @@ const {
   updateRolePermissions,
   getAllRoles,
   getRoleDetails,
+  postUserPermissions,
   cleanAllUserPermissions,
   debugPermissions
 } = require('../controllers/permissionController');
@@ -41,6 +42,9 @@ router.post('/user/:userId/deny-permissions', auth, superadmin, denyRolePermissi
 
 // Allow specific role permissions for a user (superadmin only)
 router.post('/user/:userId/allow-permissions', auth, superadmin, allowRolePermissions);
+
+// Post user's permissions (superadmin only)
+router.post('/user/:userId/permissions', auth, superadmin, postUserPermissions);
 
 // Update user's restrictions (superadmin only)
 router.put('/user/:userId/restrictions', auth, superadmin, updateUserRestrictions);

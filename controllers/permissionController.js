@@ -1,6 +1,4 @@
 const User = require('../models/User');
-const UserProjectPermission = require('../models/UserProjectPermission');
-const Project = require('../models/Project');
 const { getUserProjectPermissions: getUserProjectPermissionsMiddleware } = require('../middleware/permissionMiddleware');
 
 /**
@@ -73,13 +71,109 @@ const getUserPermissions = async (req, res) => {
   }
 };
 
+const postUserPermissions = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { permissions } = req.body;
+    
+    console.log('🔧 POST USER PERMISSIONS - User ID:', userId);
+    console.log('🔧 POST USER PERMISSIONS - Permissions received:', permissions);
+    
+    const user = await User.findById(userId).populate('roleRef');
+    if (!user) {
+      console.log('❌ User not found with ID:', userId);
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    console.log('✅ Found user:', user.name, user.email, 'Role:', user.role, 'Level:', user.level);
+    console.log('📋 Current custom permissions:', user.customPermissions);
+    
+    // Get role permissions
+    const Role = require('../models/Role');
+    const roleDef = await Role.findOne({ name: user.role });
+    const rolePermissions = roleDef?.permissions || [];
+    
+    console.log('📋 Role permissions:', rolePermissions);
+    
+    // Validate permissions structure
+    if (!permissions || typeof permissions !== 'object') {
+      return res.status(400).json({ 
+        message: 'Invalid permissions format. Expected { allowed: [], denied: [] }',
+        received: permissions 
+      });
+    }
+    
+    // Ensure the structure is correct
+    const customPermissions = {
+      allowed: Array.isArray(permissions.allowed) ? permissions.allowed : [],
+      denied: Array.isArray(permissions.denied) ? permissions.denied : []
+    };
+    
+    console.log('📝 Setting custom permissions:', customPermissions);
+    
+    // Calculate effective permissions: Role + Custom Allowed - Custom Denied
+    const customAllowed = customPermissions.allowed || [];
+    const customDenied = customPermissions.denied || [];
+    
+    // Combine role permissions + custom allowed permissions
+    const allAllowed = [...rolePermissions, ...customAllowed];
+    
+    // Remove denied permissions from allowed list
+    const finalAllowed = allAllowed.filter(perm => !customDenied.includes(perm));
+    
+    // Remove duplicates
+    const uniqueAllowed = [...new Set(finalAllowed)];
+    
+    // Store the calculated effective permissions in customPermissions.allowed
+    user.customPermissions = {
+      allowed: uniqueAllowed,  // Store role + custom allowed - denied
+      denied: customDenied     // Keep denied permissions
+    };
+    
+    // Save to database
+    const savedUser = await user.save();
+    
+    console.log('✅ CALCULATED EFFECTIVE PERMISSIONS:');
+    console.log('   📋 Role permissions:', rolePermissions.length);
+    console.log('   ➕ Custom allowed:', customAllowed.length);
+    console.log('   ➖ Custom denied:', customDenied.length);
+    console.log('   🎯 Final effective:', uniqueAllowed.length);
+    
+    res.json({ 
+      success: true, 
+      message: 'User permissions posted successfully',
+      user: {
+        id: savedUser._id,
+        name: savedUser.name,
+        email: savedUser.email,
+        role: savedUser.role,
+        level: savedUser.level
+      },
+      permissions: {
+        allowed: savedUser.customPermissions.allowed,
+        denied: savedUser.customPermissions.denied
+      },
+      customPermissions: savedUser.customPermissions,
+      rolePermissions: rolePermissions
+    }); 
+  } catch (error) {
+    console.error('❌ Post user permissions error:', error);
+    console.error('❌ Error details:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while posting permissions',
+      error: error.message
+    });
+  }
+};
+
 /**
  * Update user's custom permissions
  */
 const updateUserPermissions = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { effective, allowed, denied } = req.body;
+    const {  allowed, denied } = req.body;
 
     // Only superadmin can update permissions
     if (req.user.role !== 'superadmin' && req.user.level !== 1) {
@@ -248,6 +342,7 @@ const setUserProjectPermissions = async (req, res) => {
 
     // Verify user and project exist
     const user = await User.findById(userId);
+    const Project = require('../models/Project');
     const project = await Project.findById(projectId);
     
     if (!user) {
@@ -259,6 +354,7 @@ const setUserProjectPermissions = async (req, res) => {
     }
 
     // Create or update project permissions
+    const UserProjectPermission = require('../models/UserProjectPermission');
     const userProjectPerm = await UserProjectPermission.findOneAndUpdate(
       { user: userId, project: projectId },
       {
@@ -296,6 +392,7 @@ const removeUserProjectPermissions = async (req, res) => {
       return res.status(403).json({ message: 'Access denied: Only superadmin can remove project permissions' });
     }
 
+    const UserProjectPermission = require('../models/UserProjectPermission');
     const result = await UserProjectPermission.findOneAndDelete({
       user: userId,
       project: projectId
@@ -971,5 +1068,6 @@ module.exports = {
   getAllRoles,
   getRoleDetails,
   cleanAllUserPermissions,
-  debugPermissions
+  debugPermissions,
+  postUserPermissions
 };

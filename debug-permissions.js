@@ -83,3 +83,4 @@ async function debugPermissions() {
 
 // Run the debug
 debugPermissions();
+

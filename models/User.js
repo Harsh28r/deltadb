@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
   level: { type: Number, required: true },
   // User-specific permission overrides (overrides role permissions)
   customPermissions: {
-    allowed: [{ type: String, trim: true, lowercase: true }], // Additional permissions
+    allowed: [{ type: String, trim: true, lowercase: true  }], // Additional permissions
     denied: [{ type: String, trim: true, lowercase: true }]   // Denied permissions (overrides role)
   },
   // User status and restrictions
