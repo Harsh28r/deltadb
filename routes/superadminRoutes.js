@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, createUserWithProjects, getUsersWithProjects, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions, updateUserProjects, deleteUserProjects, assignProjectsToUser, getUserProjectsAssignment, getindividualRoleById } = require('../controllers/superadminController');
+const { registerUser, loginUser,  registerManager, registerSales, initSuperadmin, createRole, editRole, deleteRole, listRoles, createUserWithRole, createUserWithProjects, getUsersWithProjects, editUserWithRole, deleteUserWithRole, getUserById, adminLogin, currentUser, getUsersByRole, getAllUsersGroupedByRole, getUserHistory, getUserTimeline, getAllUsersWithHistory, updateSuperadminPermissions, updateUserProjects, deleteUserProjects, assignProjectsToUser, getUserProjectsAssignment, getindividualRoleById, updateUserCustomPermissions, addUserCustomPermission, removeUserCustomPermission, getUserEffectivePermissions, checkUserPermission, updateUserPermissionsDirect, updateAllUsersWithRolePermissions } = require('../controllers/superadminController');
 const superadmin = require('../middleware/superadmin');
 
+
 // Public routes (no authentication required)
-router.post('/register', registerUser);
-router.post('/register/manager', registerManager);
-router.post('/register/sales', registerSales);
+// router.post('/register', registerUser);
+// router.post('/register/manager', registerManager);
+// router.post('/register/sales', registerSales);
+
+
 router.post('/login', loginUser);
 router.post('/admin-login', adminLogin);
 router.post('/init-superadmin', initSuperadmin);
@@ -44,6 +47,18 @@ router.delete('/users/:userId', superadmin, deleteUserWithRole);
 router.get('/users/:userId/history', superadmin, getUserHistory);
 router.get('/users/:userId/timeline', superadmin, getUserTimeline);
 router.get('/users/history/all', superadmin, getAllUsersWithHistory);
+
+// Custom permissions management
+router.put('/users/:userId/custom-permissions', superadmin, updateUserCustomPermissions);
+router.post('/users/:userId/custom-permissions/add', superadmin, addUserCustomPermission);
+router.post('/users/:userId/custom-permissions/remove', superadmin, removeUserCustomPermission);
+router.get('/users/:userId/effective-permissions', superadmin, getUserEffectivePermissions);
+router.post('/users/:userId/check-permission', superadmin, checkUserPermission);
+// Simple direct permission update
+router.put('/users/:userId/permissions', superadmin, updateUserPermissionsDirect);
+
+// Update all users with role permissions (one-time migration)
+router.post('/update-all-users-permissions', superadmin, updateAllUsersWithRolePermissions);
 
 // Who am I
 router.get('/me', superadmin, currentUser);
