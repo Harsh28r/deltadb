@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Role = require('../models/Role');
 const UserReporting = require('../models/UserReporting');
-const { getAvailableRolesForLevel } = require('../middleware/roleLevelAuth');
+// const { getAvailableRolesForLevel } = require('../middleware/roleLevelAuth');
 
 // Environment variables
 const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || 'superadmin@deltayards.com';
@@ -669,10 +669,10 @@ const createRole = async (req, res) => {
 const editRole = async (req, res) => {
   const { roleName } = req.params;
   const { name, level, permissions } = req.body || {};
-  
+
   try {
     if (!roleName) return res.status(400).json({ message: 'Role ID is required' });
-    if (!name && !level && !permissions) {
+    if (!name && level === undefined && !permissions) {
       return res.status(400).json({ message: 'At least one field is required for update' });
     }
 
@@ -692,14 +692,27 @@ const editRole = async (req, res) => {
       if (existingRole) return res.status(400).json({ message: 'Role name already exists' });
       role.name = normalized;
     }
-    
+
     if (level !== undefined) {
       if (level < 1 || level > 10) {
         return res.status(400).json({ message: 'Level must be between 1 and 10' });
       }
+      // Skip hierarchy validation for superadmin
+      if (req.user.level !== 1) {
+        // Find users assigned to this role
+        const usersWithRole = await User.find({ roleRef: role._id }).lean();
+        for (const user of usersWithRole) {
+          const validationResult = await validateHierarchyChange(user, level);
+          if (validationResult.error) {
+            return res.status(400).json({
+              message: `Cannot update role level: User ${user.name} (${user._id}) - ${validationResult.error}`
+            });
+          }
+        }
+      }
       role.level = level;
     }
-    
+
     if (permissions) {
       if (!Array.isArray(permissions) || permissions.length === 0) {
         return res.status(400).json({ message: 'Permissions must be a non-empty array' });
@@ -708,15 +721,23 @@ const editRole = async (req, res) => {
     }
 
     await role.save();
-    
-    res.json({ 
-      message: 'Role updated successfully', 
-      role: { 
-        id: role._id, 
-        name: role.name, 
-        level: role.level, 
-        permissions: role.permissions 
-      } 
+
+    // Update users with this role to reflect new level and name
+    if (name || level !== undefined) {
+      await User.updateMany(
+        { roleRef: role._id },
+        { $set: { role: role.name, level: role.level } }
+      );
+    }
+
+    res.json({
+      message: 'Role updated successfully',
+      role: {
+        id: role._id,
+        name: role.name,
+        level: role.level,
+        permissions: role.permissions
+      }
     });
   } catch (error) {
     console.error('Role update error:', error);
@@ -886,7 +907,7 @@ const createUserWithRole = async (req, res) => {
 const editUserWithRole = async (req, res) => {
   const { userId } = req.params;
   const { name, email, mobile, companyName, roleName, password } = req.body || {};
-  
+
   try {
     if (!userId) return res.status(400).json({ message: 'User ID is required' });
     if (!name && !email && !mobile && !companyName && !roleName && !password) {
@@ -905,7 +926,7 @@ const editUserWithRole = async (req, res) => {
     if (name) user.name = name;
     if (mobile) user.mobile = mobile;
     if (companyName) user.companyName = companyName;
-    
+
     // Handle email update with duplicate check
     if (email) {
       const normalizedEmail = String(email).trim().toLowerCase();
@@ -926,46 +947,95 @@ const editUserWithRole = async (req, res) => {
     // Handle role update
     if (roleName) {
       const newRole = await Role.findOne({ name: String(roleName).toLowerCase().trim() });
-      if (!newRole) return res.status(404).json({ message: `Role ${req.body.role} not found` });
-      
-      // Prevent downgrading to superadmin level
-      if (newRole.level === 1) {
-        return res.status(403).json({ message: 'Cannot assign superadmin role to regular users' });
+      if (!newRole) return res.status(404).json({ message: `Role ${roleName} not found` });
+
+      // Prevent assigning superadmin role to regular users
+      if (newRole.level === 1 && req.user.level !== 1) {
+        return res.status(403).json({ message: 'Only superadmin can assign superadmin role' });
       }
-      
+
+      // Validate hierarchy before role update (skip for superadmin)
+      if (req.user.level !== 1) {
+        const validationResult = await validateHierarchyChange(user, newRole.level);
+        if (validationResult.error) {
+          return res.status(400).json({
+            message: `Cannot assign role to ${user.name}: ${validationResult.error}`
+          });
+        }
+      }
+
+      // Update role fields
       user.role = newRole.name;
       user.roleRef = newRole._id;
       user.level = newRole.level;
-      
+
       // Update customPermissions when role changes
       if (!user.customPermissions) {
         user.customPermissions = { allowed: [], denied: [] };
       }
-      
+
       // Calculate allowed permissions: role permissions minus denied permissions
-      const allowedPermissions = newRole.permissions.filter(permission => 
+      const allowedPermissions = newRole.permissions.filter(permission =>
         !(user.customPermissions.denied || []).includes(permission)
       );
-      
+
       user.customPermissions.allowed = allowedPermissions;
     }
 
     await user.save();
-    
-    res.json({ 
-      message: 'User updated successfully', 
-      user: { 
-        id: user._id, 
-        name: user.name, 
-        email: user.email, 
-        mobile: user.mobile, 
-        companyName: user.companyName, 
-        role: user.role, 
-        level: user.level 
-      } 
+
+    res.json({
+      message: 'User updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        companyName: user.companyName,
+        role: user.role,
+        level: user.level
+      }
     });
   } catch (error) {
+    console.error('User update error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Validation function for hierarchy change
+const validateHierarchyChange = async (user, newLevel) => {
+  try {
+    // Get superiors
+    const superiorsReporting = await UserReporting.find({ user: user._id }).lean();
+    const superiors = superiorsReporting.flatMap(r => r.reportsTo.map(rt => rt.user));
+
+    // Get subordinates
+    const subordinatesReporting = await UserReporting.find({
+      'reportsTo.path': { $regex: `/(${user._id})/` }
+    }).lean();
+    const subordinates = subordinatesReporting.map(r => r.user);
+
+    // Fetch levels for superiors and subordinates
+    const superiorLevels = await User.find({ _id: { $in: superiors } }).select('level').lean();
+    const subordinateLevels = await User.find({ _id: { $in: subordinates } }).select('level').lean();
+
+    // Check superiors: User's new level should be higher (greater number) than superiors' levels
+    for (const superior of superiorLevels) {
+      if (newLevel <= superior.level) {
+        return { error: 'Cannot assign role: User would have equal or higher rank than superior' };
+      }
+    }
+
+    // Check subordinates: User's new level should be lower (smaller number) than subordinates' levels
+    for (const subordinate of subordinateLevels) {
+      if (newLevel >= subordinate.level) {
+        return { error: 'Cannot assign role: User would have equal or lower rank than subordinate' };
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
   }
 };
 

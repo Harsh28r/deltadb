@@ -31,8 +31,8 @@ const changeStatusSchema = Joi.object({
 });
 
 const bulkTransferLeadsSchema = Joi.object({
-  fromUserId: Joi.string().hex().length(24).required(),
-  toUserId: Joi.string().hex().length(24).required(),
+  fromUser: Joi.string().hex().length(24).required(),
+  toUser: Joi.string().hex().length(24).required(),
   leadIds: Joi.array().items(Joi.string().hex().length(24)).min(1).required(),
   projectId: Joi.string().hex().length(24).optional()
 });
@@ -341,7 +341,7 @@ const bulkTransferLeads = async (req, res) => {
   const { error } = bulkTransferLeadsSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
 
-  const { fromUserId, toUserId, leadIds, projectId } = req.body;
+  const { fromUser, toUser, leadIds, projectId } = req.body;
 
   try {
     if (projectId) {
@@ -349,7 +349,7 @@ const bulkTransferLeads = async (req, res) => {
       if (!project) return res.status(400).json({ message: 'Invalid projectId' });
     }
 
-    const leads = await Lead.find({ _id: { $in: leadIds }, user: fromUserId }).populate('currentStatus').lean();
+    const leads = await Lead.find({ _id: { $in: leadIds }, user: fromUser }).populate('currentStatus').lean();
     if (leads.length === 0) return res.status(404).json({ message: 'No matching leads found' });
 
     const role = await mongoose.model('Role').findById(req.user.roleRef).lean();
@@ -363,15 +363,15 @@ const bulkTransferLeads = async (req, res) => {
     if (projectId) update.$set.project = projectId;
 
     const result = await Lead.updateMany(
-      { _id: { $in: leadIds }, user: fromUserId },
+      { _id: { $in: leadIds }, user: fromUser },
       update,
       { context: { userId: req.user._id } }
     );
 
     for (const lead of leads) {
       await logLeadActivity(lead._id, req.user._id, 'transferred', {
-        fromUser: fromUserId,
-        toUser: toUserId,
+        fromUser: fromUser,
+        toUser: toUser,
         oldProject: lead.project?.toString(),
         newProject: projectId
       });

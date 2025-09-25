@@ -16,7 +16,7 @@ const {
 
 const router = express.Router();
 
-router.post('/', auth, checkPermission('channel-partner:create'), superadmin, createChannelPartner);
+router.post('/', auth, checkPermission('channel-partner:create'), createChannelPartner);
 router.get('/', auth, checkPermission('channel-partner:read_all'), getChannelPartners);
 router.get('/:id', auth, checkPermission('channel-partner:read'), getChannelPartnerById);
 router.put('/:id', auth, checkPermission('channel-partner:update'), superadmin, updateChannelPartner);
