@@ -43,6 +43,7 @@ const channelPartnerSchema = new mongoose.Schema({
 // });
 
 // Indexes for performance
+channelPartnerSchema.index({ name: 1 });
 channelPartnerSchema.index({ phone: 1 });
 channelPartnerSchema.index({ mahareraNo: 1 });
 channelPartnerSchema.index({ isActive: 1 });

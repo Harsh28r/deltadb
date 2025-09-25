@@ -346,6 +346,29 @@ const getUserProfile = async (req, res) => {
       ])
     ].filter(permission => !customPermissions.denied.includes(permission));
 
+    // Find projects explicitly assigned to this user
+    const userProjects = await UserProject.find({ user: user._id })
+      .populate('project')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const assignedProjects = (userProjects || [])
+      .filter(up => up.project)
+      .map(up => ({
+        id: up.project._id,
+        name: up.project.name,
+        location: up.project.location,
+        logo: up.project.logo,
+        developBy: up.project.developBy,
+        assignedAt: up.createdAt
+      }));
+
+    // Project access derived from restrictions and role
+    const canAccessAll = user.role === 'superadmin' || user.level === 1;
+    const allowedProjects = user.restrictions?.allowedProjects || [];
+    const deniedProjects = user.restrictions?.deniedProjects || [];
+    const maxProjects = user.restrictions?.maxProjects ?? null;
+
     res.json({
       success: true,
       user: {
@@ -361,10 +384,11 @@ const getUserProfile = async (req, res) => {
         denied: customPermissions.denied
       },
       projectAccess: {
-        canAccessAll: user.canAccessAllProjects || false,
-        allowedProjects: user.allowedProjects || [],
-        deniedProjects: user.deniedProjects || [],
-        maxProjects: user.maxProjects || null
+        canAccessAll,
+        assignedProjects,
+        allowedProjects,
+        deniedProjects,
+        maxProjects
       }
     });
 

@@ -152,3 +152,4 @@ Content-Type: application/json
 3. **User-Specific Overrides**: Easy to deny specific permissions per user
 4. **Clear Structure**: All permissions visible in one place
 5. **Easy to Understand**: Role permissions are automatic, denied permissions are user-specific
+
