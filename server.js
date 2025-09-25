@@ -27,6 +27,8 @@ const channelPartnerRouters = require('./routes/channelPartnerRoutes');
 const initLeadSource = require('./scripts/initLeadSource');
 const imageRoutes = require('./routes/images'); // Adjust path
 const dashBoardRoutes = require('./routes/dashBoardRoutes');
+const taskRoutes = require('./routes/taskRoutes');
+const reminderRoutes = require('./routes/reminderRoutes'); 
 
 // Initialize cron jobs
 require('./cron/deactivation');
@@ -149,6 +151,8 @@ app.use('/api/cp-sourcing', cpSourcingRoutes);
 app.use('/api/channel-partner', channelPartnerRouters);
 app.use('/', imageRoutes);
 app.use('/api/dashboard', dashBoardRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/reminder', reminderRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
