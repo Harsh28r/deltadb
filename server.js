@@ -29,6 +29,9 @@ const imageRoutes = require('./routes/images'); // Adjust path
 const dashBoardRoutes = require('./routes/dashBoardRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const reminderRoutes = require('./routes/reminderRoutes'); 
+const { smartRateLimiter } = require('./middleware/rateLimiter');
+const logger = require('./utils/logger');
+const { globalErrorHandler } = require('./middleware/errorHandler');
 
 // Initialize cron jobs
 require('./cron/deactivation');
@@ -39,6 +42,30 @@ const io = new Server(server, {
   cors: { origin: '*' } // Adjust for production
 });
 
+// Import WebSocket components
+const SocketManager = require('./websocket/socketManager');
+const NotificationService = require('./services/notificationService');
+const ReminderService = require('./services/reminderService');
+
+// Initialize WebSocket system
+let socketManager, notificationService, reminderService;
+
+const initializeRealTime = (io) => {
+  socketManager = new SocketManager(io);
+  notificationService = new NotificationService(socketManager);
+  reminderService = new ReminderService(notificationService);
+
+  // Make services available globally
+  global.socketManager = socketManager;
+  global.notificationService = notificationService;
+  global.reminderService = reminderService;
+
+  console.log('✅ Real-time system initialized');
+};
+
+// Call after creating io (around line 40)
+initializeRealTime(io);
+
 // Middleware
 // CORS configuration using dedicated middleware
 app.use(cors(corsOptions));
@@ -47,6 +74,11 @@ app.use(corsDebug);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+// Apply rate limiting
+app.use(smartRateLimiter);
+
+// Apply request logging
+app.use(logger.createRequestMiddleware());
 
 // Global rate limiter - disabled for Vercel compatibility
 // const limiter = rateLimit({
@@ -56,10 +88,13 @@ app.use(bodyParser.json());
 // });
 // app.use(limiter);
 
-// MongoDB connection stringhudugbdrr
-const MONGO_URI =  'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+// MongoDB connection string from environment variables
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/deltacrm?retryWrites=true&w=majority&appName=Cluster0';
 
-// const MONGO_URI = "mongodb://localhost:27017/deltadb1"
+if (!MONGO_URI) {
+  console.error('❌ FATAL ERROR: MONGO_URI environment variable is not set');
+  process.exit(1);
+}
 
 // Log MongoDB URI
 console.log('MONGO_URI:', MONGO_URI);
@@ -242,24 +277,36 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Error:', err.message);
-  if (err.message === 'Not allowed by CORS') {
-    return res.status(403).json({ 
-      error: 'CORS error', 
-      message: 'Origin not allowed',
-      origin: req.headers.origin 
-    });
-  }
-  res.status(500).json({ error: 'Internal server error' });
-});
+// Global error handling middleware
+app.use(globalErrorHandler);
 
 // Start server
 const PORT = process.env.PORT || 5000;
 
-const startServer = () => {
+// const startServer = () => {
+//   if (isMongoConnected) {
+//     server.listen(PORT, () => {
+//       console.log(`Server running on port ${PORT}`);
+//       console.log('MongoDB connection status:', isMongoConnected);
+//       initLeadSource();
+//     });
+//   } else {
+//     console.log('Waiting for MongoDB connection...');
+//     setTimeout(startServer, 2000);
+//   }
+// };
+
+const startServer = async () => {
   if (isMongoConnected) {
+    // Initialize database optimizations
+    try {
+      const databaseOptimizer = require('./utils/databaseOptimizer');
+      await databaseOptimizer.createOptimizedIndexes();
+      console.log('✅ Database optimizations applied');
+    } catch (error) {
+      console.warn('⚠️ Database optimization failed:', error.message);
+    }
+
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log('MongoDB connection status:', isMongoConnected);

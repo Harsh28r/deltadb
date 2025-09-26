@@ -6,27 +6,44 @@ const CPSourcing = require('../models/CPSourcing');
 const { logLeadActivity } = require('./leadActivityController');
 const LeadActivity = require('../models/LeadActivity');
 const UserReporting = require('../models/UserReporting');
+const LeadService = require('../services/leadService');
+const cacheManager = require('../utils/cacheManager');
+
+// Initialize lead service (leadService is exported as instance)
+const leadService = LeadService;
+
+// Connect notification service when available
+if (global.notificationService) {
+  leadService.setNotificationService(global.notificationService);
+}
 
 const createLeadSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
-  projectId: Joi.string().hex().length(24).required(),
+  project: Joi.string().hex().length(24).optional(),
+  projectId: Joi.string().hex().length(24).optional(),
   channelPartnerId: Joi.string().hex().length(24).optional(),
-  leadSourceId: Joi.string().hex().length(24).required(),
+  channelPartner: Joi.string().hex().length(24).optional(),
+  leadSourceId: Joi.string().hex().length(24).optional(),
+  leadSource: Joi.string().hex().length(24).optional(),
   currentStatusId: Joi.string().hex().length(24).optional(),
+  currentStatus: Joi.string().hex().length(24).optional(),
   customData: Joi.object().optional(),
   cpSourcingId: Joi.string().hex().length(24).optional()
-});
+}).or('project', 'projectId');
 
 const editLeadSchema = Joi.object({
   projectId: Joi.string().hex().length(24).optional(),
+  project: Joi.string().hex().length(24).optional(),
   channelPartnerId: Joi.string().hex().length(24).optional(),
+  channelPartner: Joi.string().hex().length(24).optional(),
   leadSourceId: Joi.string().hex().length(24).optional(),
+  leadSource: Joi.string().hex().length(24).optional(),
   customData: Joi.object().optional(),
   cpSourcingId: Joi.string().hex().length(24).optional()
 });
 
 const changeStatusSchema = Joi.object({
-  newStatusId: Joi.string().hex().length(24).required(),
+  newStatus: Joi.string().hex().length(24).required(),
   newData: Joi.object().optional()
 });
 
@@ -34,7 +51,8 @@ const bulkTransferLeadsSchema = Joi.object({
   fromUser: Joi.string().hex().length(24).required(),
   toUser: Joi.string().hex().length(24).required(),
   leadIds: Joi.array().items(Joi.string().hex().length(24)).min(1).required(),
-  projectId: Joi.string().hex().length(24).optional()
+  projectId: Joi.string().hex().length(24).optional(),
+  oldProjectId: Joi.string().hex().length(24).optional()
 });
 
 const getLeadsSchema = Joi.object({
@@ -54,13 +72,23 @@ const createLead = async (req, res) => {
     const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true }).lean();
     if (!defaultStatus) return res.status(400).json({ message: 'No default lead status found' });
 
-    if (req.body.currentStatusId && req.body.currentStatusId !== defaultStatus._id.toString()) {
+    const providedStatusId = req.body.currentStatusId || req.body.currentStatus;
+    if (providedStatusId && providedStatusId !== defaultStatus._id.toString()) {
       return res.status(400).json({ message: 'Provided status must be the default status' });
     }
 
+    // Resolve project from either project or projectId
+    const resolvedProjectId = req.body.project || req.body.projectId;
+    if (!resolvedProjectId) {
+      return res.status(400).json({ message: 'project or projectId is required' });
+    }
+
+    // Resolve channel partner from either channelPartnerId or channelPartner
+    const resolvedChannelPartnerId = req.body.channelPartnerId || req.body.channelPartner || null;
+
     let cpSourcingId = null;
-    if (req.body.channelPartnerId) {
-      const channelPartner = await ChannelPartner.findById(req.body.channelPartnerId).lean();
+    if (resolvedChannelPartnerId) {
+      const channelPartner = await ChannelPartner.findById(resolvedChannelPartnerId).lean();
       if (!channelPartner) {
         return res.status(400).json({ message: 'Invalid channel partner' });
       }
@@ -71,8 +99,8 @@ const createLead = async (req, res) => {
         }
         const cpSourcing = await CPSourcing.findOne({
           userId: req.body.cpSourcingId,
-          channelPartnerId: req.body.channelPartnerId,
-          projectId: req.body.projectId
+          channelPartnerId: resolvedChannelPartnerId,
+          projectId: resolvedProjectId
         }).lean();
         if (!cpSourcing) {
           return res.status(400).json({ message: 'No matching CPSourcing found for selected sourcing person, channel partner, and project' });
@@ -81,11 +109,40 @@ const createLead = async (req, res) => {
       }
     }
 
+    // Resolve lead source
+    let resolvedLeadSourceId = req.body.leadSourceId;
+    if (!resolvedLeadSourceId) {
+      if (req.body.leadSource) {
+        const providedName = String(req.body.leadSource || '').trim();
+        const byName = await mongoose.model('LeadSource')
+          .findOne({ name: providedName })
+          .collation({ locale: 'en', strength: 2 })
+          .lean();
+        if (byName) {
+          resolvedLeadSourceId = byName._id;
+        } else {
+          const fallback = await mongoose.model('LeadSource')
+            .findOne({ name: 'Channel Partner' })
+            .collation({ locale: 'en', strength: 2 })
+            .lean();
+          if (!fallback) return res.status(400).json({ message: 'LeadSource not configured. Please initialize Lead Sources.' });
+          resolvedLeadSourceId = fallback._id;
+        }
+      } else {
+        const fallback = await mongoose.model('LeadSource')
+          .findOne({ name: 'Channel Partner' })
+          .collation({ locale: 'en', strength: 2 })
+          .lean();
+        if (!fallback) return res.status(400).json({ message: 'LeadSource not configured. Please initialize Lead Sources.' });
+        resolvedLeadSourceId = fallback._id;
+      }
+    }
+
     const lead = new Lead({
       user: req.body.userId,
-      project: req.body.projectId,
-      channelPartner: req.body.channelPartnerId || null,
-      leadSource: req.body.leadSourceId,
+      project: resolvedProjectId,
+      channelPartner: resolvedChannelPartnerId || null,
+      leadSource: resolvedLeadSourceId,
       currentStatus: defaultStatus._id,
       customData: req.body.customData || {},
       cpSourcingId,
@@ -95,8 +152,8 @@ const createLead = async (req, res) => {
 
     await lead.save({ context: { userId: req.user._id } });
 
-    if (req.body.channelPartnerId) {
-      await ChannelPartner.findByIdAndUpdate(req.body.channelPartnerId, { isActive: true });
+    if (resolvedChannelPartnerId) {
+      await ChannelPartner.findByIdAndUpdate(resolvedChannelPartnerId, { isActive: true });
     }
 
     if (cpSourcingId) {
@@ -120,6 +177,17 @@ const getLeads = async (req, res) => {
 
   try {
     const { userId, projectId, statusId, page, limit } = value;
+
+    // Create cache key for this query
+    const cacheKey = `leads:${req.user._id}:${JSON.stringify(value)}`;
+
+    // Check cache first
+    const cachedResults = await cacheManager.getQueryResult(cacheKey);
+    if (cachedResults) {
+      console.log('getLeads - Returning cached results');
+      return res.json(cachedResults);
+    }
+
     let query = {};
 
     if (req.user.role !== 'superadmin' && req.user.level !== 1) {
@@ -169,10 +237,11 @@ const getLeads = async (req, res) => {
     const totalItems = await Lead.countDocuments(query);
     const totalPages = Math.ceil(totalItems / limit);
     const leads = await Lead.find(query)
-      .select('user project channelPartner leadSource currentStatus customData createdAt')
+      .select('user project channelPartner cpSourcingId leadSource currentStatus customData createdAt ')
       .populate('user', 'name email')
       .populate('project', 'name')
       .populate('channelPartner', 'name phone')
+      .populate('cpSourcingId', 'userId')
       .populate('leadSource', 'name')
       .populate('currentStatus', 'name formFields is_final_status')
       .sort({ createdAt: -1 })
@@ -182,7 +251,7 @@ const getLeads = async (req, res) => {
 
     console.log('getLeads - Found leads:', leads.length);
 
-    res.json({
+    const results = {
       leads,
       pagination: {
         currentPage: page,
@@ -190,7 +259,12 @@ const getLeads = async (req, res) => {
         totalItems,
         limit
       }
-    });
+    };
+
+    // Cache the results for 5 minutes
+    await cacheManager.setQueryResult(cacheKey, results, 10);
+
+    res.json(results);
   } catch (err) {
     console.error('getLeads - Error:', err.message);
     res.status(500).json({ message: err.message });
@@ -205,6 +279,11 @@ const getLeadById = async (req, res) => {
       .populate('user', 'name email')
       .populate('project', 'name')
       .populate('channelPartner', 'name phone')
+      .populate('cpSourcingId', 'userId')
+      .populate({
+        path: 'cpSourcingId.userId',
+        select: 'name phone'
+      })
       .populate('leadSource', 'name')
       .populate({
         path: 'currentStatus',
@@ -328,7 +407,7 @@ const changeLeadStatus = async (req, res) => {
     const lead = await Lead.findById(id);
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
-    await lead.changeStatus(req.body.newStatusId, req.body.newData || {}, req.user._id);
+    await lead.changeStatus(req.body.newStatus, req.body.newData || {}, req.user._id);
 
     res.json(lead);
   } catch (err) {
@@ -341,7 +420,7 @@ const bulkTransferLeads = async (req, res) => {
   const { error } = bulkTransferLeadsSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
 
-  const { fromUser, toUser, leadIds, projectId } = req.body;
+  const { fromUser, toUser, leadIds, projectId, oldProjectId } = req.body;
 
   try {
     if (projectId) {
@@ -349,7 +428,11 @@ const bulkTransferLeads = async (req, res) => {
       if (!project) return res.status(400).json({ message: 'Invalid projectId' });
     }
 
-    const leads = await Lead.find({ _id: { $in: leadIds }, user: fromUser }).populate('currentStatus').lean();
+    const leadQuery = { _id: { $in: leadIds }, user: fromUser };
+    if (oldProjectId) {
+      leadQuery.project = oldProjectId;
+    }
+    const leads = await Lead.find(leadQuery).populate('currentStatus').lean();
     if (leads.length === 0) return res.status(404).json({ message: 'No matching leads found' });
 
     const role = await mongoose.model('Role').findById(req.user.roleRef).lean();
@@ -359,7 +442,7 @@ const bulkTransferLeads = async (req, res) => {
       }
     }
 
-    const update = { $set: { user: toUserId, updatedBy: req.user._id } };
+    const update = { $set: { user: toUser, updatedBy: req.user._id } };
     if (projectId) update.$set.project = projectId;
 
     const result = await Lead.updateMany(

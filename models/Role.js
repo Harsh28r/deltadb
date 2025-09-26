@@ -1,6 +1,4 @@
 const mongoose = require('mongoose');
-const User = require('./User');
-const UserReporting = require('./UserReporting');
 
 const roleSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true, trim: true },
@@ -22,6 +20,7 @@ roleSchema.post('findOneAndUpdate', async function(doc, next) {
     if (doc && this.getUpdate().level !== undefined && doc.level !== this.getUpdate().level) {
       console.log(`Role level changed from ${doc.level} to ${this.getUpdate().level} for role ${doc._id}`);
       // Find all users with this role
+      const User = mongoose.model('User');
       const users = await User.find({ roleRef: doc._id });
       console.log(`Found ${users.length} users with role ${doc.name}`);
 
@@ -42,6 +41,9 @@ roleSchema.post('findOneAndUpdate', async function(doc, next) {
 // Function to revalidate and fix UserReporting
 const revalidateUserReporting = async (userId, newLevel) => {
   try {
+    const UserReporting = mongoose.model('UserReporting');
+    const User = mongoose.model('User');
+
     const userReporting = await UserReporting.findOne({ user: userId });
     if (!userReporting) {
       console.log(`No UserReporting found for user ${userId}, creating default`);

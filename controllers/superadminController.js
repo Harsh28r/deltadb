@@ -1,9 +1,68 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const Joi = require('joi');
 const User = require('../models/User');
 const Role = require('../models/Role');
 const UserReporting = require('../models/UserReporting');
+const UserService = require('../services/userService');
 // const { getAvailableRolesForLevel } = require('../middleware/roleLevelAuth');
+
+// Initialize user service (userService is exported as instance)
+const userService = UserService;
+
+// Joi validation schemas
+const registerUserSchema = Joi.object({
+  name: Joi.string().required().min(2).max(100).trim(),
+  email: Joi.string().email().required().lowercase(),
+  password: Joi.string().required().min(6).max(128),
+  mobile: Joi.string().pattern(/^\d{10}$/).optional(),
+  companyName: Joi.string().min(2).max(100).trim().optional()
+});
+
+const loginUserSchema = Joi.object({
+  email: Joi.string().email().required().lowercase(),
+  password: Joi.string().required().min(1).max(128)
+});
+
+const adminLoginSchema = Joi.object({
+  email: Joi.string().email().required().lowercase(),
+  password: Joi.string().required().min(1).max(128)
+});
+
+const createRoleSchema = Joi.object({
+  name: Joi.string().required().min(2).max(50).lowercase().trim(),
+  permissions: Joi.array().items(Joi.string().lowercase().trim()).default([]),
+  level: Joi.number().integer().min(1).max(10).required()
+});
+
+const updateRoleSchema = Joi.object({
+  name: Joi.string().min(2).max(50).lowercase().trim().optional(),
+  permissions: Joi.array().items(Joi.string().lowercase().trim()).optional(),
+  level: Joi.number().integer().min(1).max(10).optional()
+});
+
+const createUserWithRoleSchema = Joi.object({
+  name: Joi.string().required().min(2).max(100).trim(),
+  email: Joi.string().email().required().lowercase(),
+  password: Joi.string().required().min(6).max(128),
+  mobile: Joi.string().pattern(/^\d{10}$/).optional(),
+  roleName: Joi.string().required().min(2).max(50),
+  companyName: Joi.string().min(2).max(100).trim().optional()
+});
+
+const updateUserSchema = Joi.object({
+  name: Joi.string().min(2).max(100).trim().optional(),
+  email: Joi.string().email().lowercase().optional(),
+  mobile: Joi.string().pattern(/^\d{10}$/).optional(),
+  roleName: Joi.string().min(2).max(50).optional(),
+  companyName: Joi.string().min(2).max(100).trim().optional(),
+  password: Joi.string().min(6).max(128).optional()
+});
+
+const userProjectsSchema = Joi.object({
+  userId: Joi.string().hex().length(24).required(),
+  projects: Joi.array().items(Joi.string().hex().length(24)).required()
+});
 
 // Environment variables
 const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || 'superadmin@deltayards.com';
@@ -18,7 +77,15 @@ const setTokenHeaders = (res, token) => {
 
 // Register a new user
 const registerUser = async (req, res) => {
-  const { name, email, password, mobile, companyName } = req.body;
+  const { error, value } = registerUserSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
+  const { name, email, password, mobile, companyName } = value;
 
   try {
     // Check if user already exists
@@ -322,7 +389,15 @@ const initSuperadmin = async (req, res) => {
 
 // Login user
 const loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { error, value } = loginUserSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
+  const { email, password } = value;
 
   try {
     console.log('=== LOGIN ATTEMPT ===');
@@ -382,13 +457,22 @@ const loginUser = async (req, res) => {
 
 // Admin login (special login for superadmin)
 const adminLogin = async (req, res) => {
+  // Validate request body
+  const { error, value } = adminLoginSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
   try {
     console.log('=== ADMIN LOGIN ATTEMPT ===');
     console.log('Request body:', req.body);
     console.log('Request query:', req.query);
-    
-    const providedEmail = (req.body?.email ?? req.query?.email ?? SUPERADMIN_EMAIL).trim().toLowerCase();
-    const adminPassFromRequest = (req.body?.adminPass ?? req.query?.adminPass ?? req.body?.password ?? req.query?.password);
+
+    const providedEmail = (value.email ?? req.query?.email ?? SUPERADMIN_EMAIL).trim().toLowerCase();
+    const adminPassFromRequest = (value.password ?? req.query?.adminPass ?? req.query?.password);
 
     console.log('Provided email:', providedEmail);
     console.log('Expected email:', SUPERADMIN_EMAIL);
@@ -614,30 +698,25 @@ const currentUser = async (req, res) => {
 
 // Create a new role
 const createRole = async (req, res) => {
-  const { name, level, permissions } = req.body || {};
-  
-  try {
-    if (!name || !level || !permissions) {
-      return res.status(400).json({ message: 'name, level, and permissions are required' });
-    }
+  // Validate request body
+  const { error, value } = createRoleSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
 
+  const { name, level, permissions } = value;
+
+  try {
     // Normalize role name
     const normalized = String(name).toLowerCase().trim();
-    
+
     // Check if role already exists
     const existingRole = await Role.findOne({ name: normalized });
     if (existingRole) {
       return res.status(400).json({ message: 'Role already exists' });
-    }
-
-    // Validate level (1 = superadmin, 2 = manager, 3 = user, 4 = sales)
-    if (level < 1 || level > 10) {
-      return res.status(400).json({ message: 'Level must be between 1 and 10' });
-    }
-
-    // Validate permissions array
-    if (!Array.isArray(permissions) || permissions.length === 0) {
-      return res.status(400).json({ message: 'Permissions must be a non-empty array' });
     }
 
     // Create new role
@@ -667,8 +746,17 @@ const createRole = async (req, res) => {
 
 // Edit an existing role
 const editRole = async (req, res) => {
+  // Validate request body
+  const { error, value } = updateRoleSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
   const { roleName } = req.params;
-  const { name, level, permissions } = req.body || {};
+  const { name, level, permissions } = value;
 
   try {
     if (!roleName) return res.status(400).json({ message: 'Role ID is required' });
@@ -805,12 +893,18 @@ const generatePath = async (userId) => {
 
 // Create a user with a specific role
 const createUserWithRole = async (req, res) => {
-  const { name, email, password, mobile, companyName, roleName } = req.body || {};
-  
+  // Validate request body
+  const { error, value } = createUserWithRoleSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
+  const { name, email, password, mobile, companyName, roleName } = value;
+
   try {
-    if (!name || !email || !password || !roleName) {
-      return res.status(400).json({ message: 'name, email, password, and roleName are required' });
-    }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -905,8 +999,17 @@ const createUserWithRole = async (req, res) => {
 
 // Edit user with role
 const editUserWithRole = async (req, res) => {
+  // Validate request body
+  const { error, value } = updateUserSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
   const { userId } = req.params;
-  const { name, email, mobile, companyName, roleName, password } = req.body || {};
+  const { name, email, mobile, companyName, roleName, password } = value;
 
   try {
     if (!userId) return res.status(400).json({ message: 'User ID is required' });
@@ -1989,16 +2092,18 @@ const createUserWithProjects = async (req, res) => {
 
 // Update user's project assignments
 const updateUserProjects = async (req, res) => {
-  const { userId, projects } = req.body || {};
+  // Validate request body
+  const { error, value } = userProjectsSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      message: 'Validation error',
+      details: error.details.map(detail => detail.message)
+    });
+  }
+
+  const { userId, projects } = value;
 
   try {
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
-
-    if (!projects || !Array.isArray(projects)) {
-      return res.status(400).json({ message: 'Projects array is required' });
-    }
 
     // Find user
     const user = await User.findById(userId);

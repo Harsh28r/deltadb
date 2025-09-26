@@ -6,7 +6,9 @@ const Joi = require('joi');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
+// Enhanced storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = 'uploads/channelpartners';
@@ -14,21 +16,51 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
+    // Generate secure filename to prevent directory traversal
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const secureFilename = crypto.randomUUID() + fileExtension;
+    cb(null, secureFilename);
   }
 });
+
+// Enhanced file upload security
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    console.log('Uploaded file MIME type:', file.mimetype);
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      console.log('File rejected - Not an image:', file.originalname);
-      return cb(new Error('File is not an image. Allowed types: jpeg, png, webp'), false);
+    console.log('File upload attempt:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Check MIME type
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      console.log('File rejected - Invalid MIME type:', file.mimetype);
+      return cb(new Error('Invalid file type. Only JPEG, PNG, and WebP images are allowed'), false);
     }
+
+    // Check file extension
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (!allowedExtensions.includes(fileExtension)) {
+      console.log('File rejected - Invalid extension:', fileExtension);
+      return cb(new Error('Invalid file extension. Only .jpg, .jpeg, .png, .webp are allowed'), false);
+    }
+
+    // Check filename for security (no path traversal attempts)
+    if (file.originalname.includes('..') || file.originalname.includes('/') || file.originalname.includes('\\')) {
+      console.log('File rejected - Suspicious filename:', file.originalname);
+      return cb(new Error('Invalid filename. Filename contains illegal characters'), false);
+    }
+
     cb(null, true);
   },
-  limits: { fileSize: 5 * 1024 * 1024 }
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max
+    files: 1, // Only 1 file per upload
+    fieldSize: 1 * 1024 * 1024 // 1MB field size limit
+  }
 });
 
 const createChannelPartnerSchema = Joi.object({
@@ -71,23 +103,52 @@ const bulkDeleteChannelPartnerSchema = Joi.object({
 
 const createChannelPartner = async (req, res) => {
   const { error } = createChannelPartnerSchema.validate(req.body);
-  if (error) return res.status(400).json({ message: error.details[0].message });
+  if (error) {
+    // Clean up uploaded file if validation fails
+    if (req.file) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkError) {
+        console.error('Failed to delete uploaded file:', unlinkError.message);
+      }
+    }
+    return res.status(400).json({ message: error.details[0].message });
+  }
 
   try {
     console.log('createChannelPartner - req.body:', JSON.stringify(req.body));
-    console.log('createChannelPartner - req.file:', req.file);
+    console.log('createChannelPartner - req.file:', req.file ? req.file.filename : 'none');
+
     const channelPartner = new ChannelPartner({
       ...req.body,
-      photo: req.file ? req.file.path : '',
+      photo: req.file ? req.file.filename : '', // Store only filename, not full path
       createdBy: req.user._id,
       updatedBy: req.user._id
     });
+
     await channelPartner.save();
-    res.status(201).json(channelPartner);
+
+    // Return response without exposing sensitive file paths
+    const response = {
+      ...channelPartner.toObject(),
+      photo: channelPartner.photo ? `/api/channel-partner/${channelPartner._id}/photo` : null // Secure URL endpoint
+    };
+
+    res.status(201).json(response);
   } catch (err) {
-    if (req.file) fs.unlinkSync(req.file.path);
+    // Clean up uploaded file on error
+    if (req.file) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkError) {
+        console.error('Failed to delete uploaded file:', unlinkError.message);
+      }
+    }
     console.error('createChannelPartner - Error:', err.message);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({
+      message: 'Failed to create channel partner',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
   }
 };
 
@@ -259,6 +320,55 @@ const bulkDeleteChannelPartners = async (req, res) => {
   }
 };
 
+// Secure photo serving endpoint
+const serveChannelPartnerPhoto = async (req, res) => {
+  try {
+    const channelPartnerId = req.params.id;
+
+    // Verify channel partner exists and user has access
+    const channelPartner = await ChannelPartner.findById(channelPartnerId).select('photo');
+    if (!channelPartner) {
+      return res.status(404).json({ message: 'Channel Partner not found' });
+    }
+
+    if (!channelPartner.photo) {
+      return res.status(404).json({ message: 'No photo available' });
+    }
+
+    // Construct secure file path
+    const photoPath = path.join(__dirname, '..', 'uploads', 'channelpartners', channelPartner.photo);
+
+    // Security check: Ensure file exists and is within allowed directory
+    if (!fs.existsSync(photoPath)) {
+      return res.status(404).json({ message: 'Photo file not found' });
+    }
+
+    // Additional security: Check if file is within the expected directory
+    const allowedDir = path.join(__dirname, '..', 'uploads', 'channelpartners');
+    const resolvedPhotoPath = path.resolve(photoPath);
+    const resolvedAllowedDir = path.resolve(allowedDir);
+
+    if (!resolvedPhotoPath.startsWith(resolvedAllowedDir)) {
+      console.error('Directory traversal attempt blocked:', resolvedPhotoPath);
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Set appropriate headers
+    const fileExtension = path.extname(channelPartner.photo).toLowerCase();
+    let contentType = 'application/octet-stream';
+    if (fileExtension === '.jpg' || fileExtension === '.jpeg') contentType = 'image/jpeg';
+    else if (fileExtension === '.png') contentType = 'image/png';
+    else if (fileExtension === '.webp') contentType = 'image/webp';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    res.sendFile(resolvedPhotoPath);
+  } catch (err) {
+    console.error('serveChannelPartnerPhoto - Error:', err.message);
+    res.status(500).json({ message: 'Failed to serve photo' });
+  }
+};
+
 module.exports = {
   createChannelPartner: [upload.single('photo'), createChannelPartner],
   getChannelPartners,
@@ -267,5 +377,6 @@ module.exports = {
   deleteChannelPartner,
   bulkCreateChannelPartners,
   bulkUpdateChannelPartners,
-  bulkDeleteChannelPartners
+  bulkDeleteChannelPartners,
+  serveChannelPartnerPhoto
 };

@@ -27,7 +27,7 @@ taskSchema.index({ assignedTo: 1, dueDate: 1 });
 taskSchema.index({ taskType: 1, relatedId: 1 });
 taskSchema.index({ status: 1, createdAt: -1 });
 taskSchema.index({ createdBy: 1 });
-taskSchema.index({ assignee: 1, status: 1 });
+taskSchema.index({ assignedTo: 1, status: 1 });
 
 // Update timestamp and user tracking
 taskSchema.pre('save', function (next) {
