@@ -42,9 +42,9 @@ const channelPartnerSchema = new mongoose.Schema({
 //   next();
 // });
 
+// Indexes for performance (phone already has unique index from schema)
 // Indexes for performance
 channelPartnerSchema.index({ name: 1 });
-channelPartnerSchema.index({ phone: 1 });
 channelPartnerSchema.index({ mahareraNo: 1 });
 channelPartnerSchema.index({ isActive: 1 });
 

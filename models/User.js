@@ -46,15 +46,40 @@ const userSchema = new mongoose.Schema({
 
 // Password hashing removed for testing
 
+
+
+
+
+
+
+
+
 userSchema.methods.matchPassword = async function (enteredPassword) {
   if (!this.password || !enteredPassword) return false;
-  return this.password === enteredPassword; // Direct string comparison for testing
+
+  // Only support bcrypt hashed passwords for security
+  if (this.password.length > 20 && this.password.startsWith('$2')) {
+    const bcrypt = require('bcryptjs');
+    return await bcrypt.compare(enteredPassword, this.password);
+  } else {
+    // Security: Do not allow unhashed passwords in production
+    console.error(`🚨 SECURITY: Unhashed password found for user ${this.email}`);
+
+    if (process.env.NODE_ENV === 'production') {
+      // In production, reject unhashed passwords
+      return false;
+    } else {
+      // In development, allow but log warning
+      console.warn(`⚠️  Development mode: Found unhashed password for user ${this.email}`);
+      return this.password === enteredPassword;
+    }
+  }
 };
 
 // Check if user has a specific permission (considers role + custom permissions)
 userSchema.methods.hasPermission = async function (permission) {
-  const Role = require('./Role');
-  
+  const Role = mongoose.model('Role');
+
   // Get role permissions first
   const roleDef = await Role.findOne({ name: this.role });
   const rolePermissions = roleDef?.permissions || [];
@@ -111,8 +136,8 @@ userSchema.methods.canAccessProject = function (projectId) {
 // Get all effective permissions for this user
 userSchema.methods.getEffectivePermissions = async function () {
   try {
-    const Role = require('./Role');
-    
+    const Role = mongoose.model('Role');
+
     // Get role permissions first
     const roleDef = await Role.findOne({ name: this.role });
     const rolePermissions = roleDef?.permissions || [];
@@ -232,5 +257,19 @@ const revalidateUserReporting = async (userId, newLevel) => {
     console.error(`Error revalidating UserReporting for user ${userId}:`, err.message);
   }
 };
+
+// Hash password before saving (single instance)
+userSchema.pre('save', async function(next) {
+  // Only hash the password if it has been modified (or is new)
+  if (!this.isModified('password') || this.password.length > 20) return next();
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = mongoose.model('User', userSchema);

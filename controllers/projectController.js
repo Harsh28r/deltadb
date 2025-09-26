@@ -1,6 +1,7 @@
 const Project = require('../models/Project');
 const User = require('../models/User');
 const Role = require('../models/Role');
+const UserReporting = require('../models/UserReporting');
 
 function publicUser(user, rolePermsMap) {
   if (!user) return null;
@@ -395,35 +396,33 @@ const assignRoleInProject = async (req, res) => {
 
     // Dynamic role assignment logic based on current user's role level
     const currentUserLevel = req.user.level || 999;
-    const targetUserLevel = targetUser.level || 999;
     const newRoleLevel = newRole.level || 999;
 
     // Superadmin can assign any role
-    if (currentUserLevel === 1) {
-      // Allow assignment
-    }
-    // Project owner can assign roles at their level or lower
-    else if (isOwner) {
-      if (newRoleLevel < currentUserLevel) {
-        return res.status(403).json({ 
-          message: `As project owner (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
-        });
+    if (currentUserLevel !== 1) {
+      // Project owner can assign roles at their level or lower
+      if (isOwner) {
+        if (newRoleLevel < currentUserLevel) {
+          return res.status(403).json({ 
+            message: `As project owner (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+          });
+        }
       }
-    }
-    // Managers can assign roles at their level or lower
-    else if (isManager) {
-      if (newRoleLevel < currentUserLevel) {
-        return res.status(403).json({ 
-          message: `As a project manager (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
-        });
+      // Managers can assign roles at their level or lower
+      else if (isManager) {
+        if (newRoleLevel < currentUserLevel) {
+          return res.status(403).json({ 
+            message: `As a project manager (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+          });
+        }
       }
-    }
-    // Regular members can only assign roles at their level or lower
-    else {
-      if (newRoleLevel < currentUserLevel) {
-        return res.status(403).json({ 
-          message: `As a project member (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
-        });
+      // Regular members can only assign roles at their level or lower
+      else {
+        if (newRoleLevel < currentUserLevel) {
+          return res.status(403).json({ 
+            message: `As a project member (level ${currentUserLevel}), you can only assign roles at level ${currentUserLevel} or lower. Cannot assign role '${newRoleName}' (level ${newRoleLevel})` 
+          });
+        }
       }
     }
 
@@ -431,6 +430,20 @@ const assignRoleInProject = async (req, res) => {
     if (newRoleLevel === 1 && currentUserLevel !== 1) {
       return res.status(403).json({ message: 'Only superadmin can assign superadmin role' });
     }
+
+    // Validate hierarchy before update (skip for superadmin)
+    if (currentUserLevel !== 1) {
+      const validationResult = await validateHierarchyChange(targetUser, newRole.level);
+      if (validationResult.error) {
+        return res.status(400).json({ 
+          message: `Cannot assign role to ${targetUser.name}: ${validationResult.error}` 
+        });
+      }
+    }
+
+    // Store old role info
+    const oldRole = targetUser.role;
+    const oldLevel = targetUser.level;
 
     // Update user's role
     targetUser.role = newRole.name;
@@ -455,7 +468,8 @@ const assignRoleInProject = async (req, res) => {
         id: targetUser._id, 
         name: targetUser.name, 
         email: targetUser.email,
-        oldRole: targetUser.role,
+        oldRole,
+        oldLevel,
         newRole: newRole.name,
         newLevel: newRole.level
       },
@@ -630,6 +644,15 @@ const bulkAssignRoleInProject = async (req, res) => {
         const oldRole = targetUser.role;
         const oldLevel = targetUser.level;
 
+        // Validate hierarchy before update
+        const validationResult = await validateHierarchyChange(targetUser, newRole.level);
+        if (validationResult.error) {
+          errors.push({ userId, userName: targetUser.name, error: validationResult.error });
+          return res.status(400).json({ 
+          message: `Cannot assign role to ${targetUser.name}: ${validationResult.error}` 
+        });
+        }
+
         // Update user's role
         targetUser.role = newRole.name;
         targetUser.roleRef = newRole._id;
@@ -688,6 +711,43 @@ const bulkAssignRoleInProject = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// Validation function for hierarchy change
+const validateHierarchyChange = async (user, newLevel) => {
+  try {
+    // Get superiors
+    const superiorsReporting = await UserReporting.find({ user: user._id }).lean();
+    const superiors = superiorsReporting.flatMap(r => r.reportsTo.map(rt => rt.user));
+
+    // Get subordinates
+    const subordinatesReporting = await UserReporting.find({
+      'reportsTo.path': { $regex: `/(${user._id})/` }
+    }).lean();
+    const subordinates = subordinatesReporting.map(r => r.user);
+
+    // Fetch levels for superiors and subordinates
+    const superiorLevels = await User.find({ _id: { $in: superiors } }).select('level').lean();
+    const subordinateLevels = await User.find({ _id: { $in: subordinates } }).select('level').lean();
+
+    // Check superiors: User's new level should be higher (greater number) than superiors' levels
+    for (const superior of superiorLevels) {
+      if (newLevel <= superior.level) {
+        return { error: 'Cannot assign role: User would have equal or higher rank than superior' };
+      }
+    }
+
+    // Check subordinates: User's new level should be lower (smaller number) than subordinates' levels
+    for (const subordinate of subordinateLevels) {
+      if (newLevel >= subordinate.level) {
+        return { error: 'Cannot assign role: User would have equal or lower rank than subordinate' };
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
   }
 };
 
