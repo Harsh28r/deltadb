@@ -8,7 +8,7 @@ const fieldSchema = new mongoose.Schema({
 });
 
 const leadStatusSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
   formFields: [fieldSchema],
   is_final_status: { type: Boolean, default: false },
   is_default_status: { type: Boolean, default: false }

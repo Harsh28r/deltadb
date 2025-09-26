@@ -6,6 +6,16 @@ const CPSourcing = require('../models/CPSourcing');
 const { logLeadActivity } = require('./leadActivityController');
 const LeadActivity = require('../models/LeadActivity');
 const UserReporting = require('../models/UserReporting');
+const LeadService = require('../services/leadService');
+const cacheManager = require('../utils/cacheManager');
+
+// Initialize lead service (leadService is exported as instance)
+const leadService = LeadService;
+
+// Connect notification service when available
+if (global.notificationService) {
+  leadService.setNotificationService(global.notificationService);
+}
 
 const createLeadSchema = Joi.object({
   userId: Joi.string().hex().length(24).required(),
@@ -14,7 +24,7 @@ const createLeadSchema = Joi.object({
   channelPartnerId: Joi.string().hex().length(24).optional(),
   channelPartner: Joi.string().hex().length(24).optional(),
   leadSourceId: Joi.string().hex().length(24).optional(),
-  leadSource: Joi.string().trim().optional(),
+  leadSource: Joi.string().hex().length(24).optional(),
   currentStatusId: Joi.string().hex().length(24).optional(),
   currentStatus: Joi.string().hex().length(24).optional(),
   customData: Joi.object().optional(),
@@ -23,14 +33,17 @@ const createLeadSchema = Joi.object({
 
 const editLeadSchema = Joi.object({
   projectId: Joi.string().hex().length(24).optional(),
+  project: Joi.string().hex().length(24).optional(),
   channelPartnerId: Joi.string().hex().length(24).optional(),
+  channelPartner: Joi.string().hex().length(24).optional(),
   leadSourceId: Joi.string().hex().length(24).optional(),
+  leadSource: Joi.string().hex().length(24).optional(),
   customData: Joi.object().optional(),
   cpSourcingId: Joi.string().hex().length(24).optional()
 });
 
 const changeStatusSchema = Joi.object({
-  newStatusId: Joi.string().hex().length(24).required(),
+  newStatus: Joi.string().hex().length(24).required(),
   newData: Joi.object().optional()
 });
 
@@ -164,6 +177,17 @@ const getLeads = async (req, res) => {
 
   try {
     const { userId, projectId, statusId, page, limit } = value;
+
+    // Create cache key for this query
+    const cacheKey = `leads:${req.user._id}:${JSON.stringify(value)}`;
+
+    // Check cache first
+    const cachedResults = await cacheManager.getQueryResult(cacheKey);
+    if (cachedResults) {
+      console.log('getLeads - Returning cached results');
+      return res.json(cachedResults);
+    }
+
     let query = {};
 
     if (req.user.role !== 'superadmin' && req.user.level !== 1) {
@@ -213,10 +237,11 @@ const getLeads = async (req, res) => {
     const totalItems = await Lead.countDocuments(query);
     const totalPages = Math.ceil(totalItems / limit);
     const leads = await Lead.find(query)
-      .select('user project channelPartner leadSource currentStatus customData createdAt')
+      .select('user project channelPartner cpSourcingId leadSource currentStatus customData createdAt ')
       .populate('user', 'name email')
       .populate('project', 'name')
       .populate('channelPartner', 'name phone')
+      .populate('cpSourcingId', 'userId')
       .populate('leadSource', 'name')
       .populate('currentStatus', 'name formFields is_final_status')
       .sort({ createdAt: -1 })
@@ -226,7 +251,7 @@ const getLeads = async (req, res) => {
 
     console.log('getLeads - Found leads:', leads.length);
 
-    res.json({
+    const results = {
       leads,
       pagination: {
         currentPage: page,
@@ -234,7 +259,12 @@ const getLeads = async (req, res) => {
         totalItems,
         limit
       }
-    });
+    };
+
+    // Cache the results for 5 minutes
+    await cacheManager.setQueryResult(cacheKey, results, 10);
+
+    res.json(results);
   } catch (err) {
     console.error('getLeads - Error:', err.message);
     res.status(500).json({ message: err.message });
@@ -249,6 +279,11 @@ const getLeadById = async (req, res) => {
       .populate('user', 'name email')
       .populate('project', 'name')
       .populate('channelPartner', 'name phone')
+      .populate('cpSourcingId', 'userId')
+      .populate({
+        path: 'cpSourcingId.userId',
+        select: 'name phone'
+      })
       .populate('leadSource', 'name')
       .populate({
         path: 'currentStatus',
@@ -372,7 +407,7 @@ const changeLeadStatus = async (req, res) => {
     const lead = await Lead.findById(id);
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
-    await lead.changeStatus(req.body.newStatusId, req.body.newData || {}, req.user._id);
+    await lead.changeStatus(req.body.newStatus, req.body.newData || {}, req.user._id);
 
     res.json(lead);
   } catch (err) {
