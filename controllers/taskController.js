@@ -5,6 +5,51 @@ const UserReporting = require('../models/UserReporting');
 const { logLeadActivity } = require('./leadActivityController');
 const { logNotification } = require('./notificationController');
 
+// Helper function to check user hierarchy access
+const checkUserHierarchy = async (requestingUserId, targetUserId) => {
+  try {
+    // Users can always assign tasks to themselves
+    if (requestingUserId.toString() === targetUserId.toString()) {
+      return true;
+    }
+
+    // Check if target user reports to requesting user
+    const targetUserReporting = await UserReporting.findOne({ user: targetUserId });
+    if (!targetUserReporting) return false;
+
+    // Check if requesting user is in the target user's reporting hierarchy
+    const hasAccess = targetUserReporting.reportsTo.some(report =>
+      report.path && report.path.includes(`/${requestingUserId}/`)
+    );
+
+    return hasAccess;
+  } catch (error) {
+    console.error('Error checking user hierarchy:', error);
+    return false;
+  }
+};
+
+// Helper function to check task access permissions
+const checkTaskAccess = async (requestingUser, task) => {
+  try {
+    // Superadmin and level 1 users have full access
+    if (requestingUser.role === 'superadmin' || requestingUser.level === 1) {
+      return true;
+    }
+
+    // Users can access their own tasks
+    if (task.assignedTo.toString() === requestingUser._id.toString()) {
+      return true;
+    }
+
+    // Users can access tasks of users in their hierarchy
+    return await checkUserHierarchy(requestingUser._id, task.assignedTo);
+  } catch (error) {
+    console.error('Error checking task access:', error);
+    return false;
+  }
+};
+
 const createTaskSchema = Joi.object({
   title: Joi.string().required().trim(),
   description: Joi.string().optional().trim(),
@@ -54,6 +99,19 @@ const createTask = async (req, res) => {
 
   try {
     const { title, description, assignedTo, taskType, relatedId, dueDate, priority, customData } = req.body;
+
+    // Authorization Check: Verify user can create tasks
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    // Authorization Check: Verify user can assign tasks to the specified user
+    const canAssignToUser = await checkUserHierarchy(req.user._id, assignedTo);
+    if (!canAssignToUser && req.user.role !== 'superadmin' && req.user.level !== 1) {
+      return res.status(403).json({
+        message: 'You can only assign tasks to users in your hierarchy or yourself'
+      });
+    }
 
     const user = await mongoose.model('User').findById(assignedTo).lean();
     if (!user) return res.status(404).json({ message: 'Assigned user not found' });
@@ -201,6 +259,14 @@ const getTaskById = async (req, res) => {
 
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
+    // Authorization Check: Verify user can view this task
+    const hasAccess = await checkTaskAccess(req.user, task);
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: 'You do not have permission to view this task'
+      });
+    }
+
     res.json(task);
   } catch (err) {
     console.error('getTaskById - Error:', err.message);
@@ -216,6 +282,14 @@ const updateTask = async (req, res) => {
   try {
     const task = await Task.findById(id);
     if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Authorization Check: Verify user can update this task
+    const hasAccess = await checkTaskAccess(req.user, task);
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: 'You do not have permission to update this task'
+      });
+    }
 
     const { title, description, dueDate, priority, customData } = req.body;
 
@@ -266,6 +340,14 @@ const deleteTask = async (req, res) => {
   try {
     const task = await Task.findById(id);
     if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Authorization Check: Verify user can delete this task
+    const hasAccess = await checkTaskAccess(req.user, task);
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: 'You do not have permission to delete this task'
+      });
+    }
 
     await task.deleteOne();
 

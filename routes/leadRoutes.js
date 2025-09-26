@@ -23,7 +23,7 @@ router.get('/', auth, checkPermission('leads:read'), checkHierarchy, getLeads);
 router.get('/:id', auth, checkPermission('leads:read'), checkHierarchy, getLeadById);
 router.put('/:id', auth, checkPermission('leads:update'), checkHierarchy, editLead);
 router.delete('/:id', auth, checkPermission('leads:delete'), checkHierarchy, deleteLead);
-router.put('/:id/status', auth, checkPermission('leads:update'), checkHierarchy, changeLeadStatus);
+router.put('/:id/status', auth, checkPermission('leads:status:update'), checkHierarchy, changeLeadStatus);
 router.post('/bulk-upload', auth, checkPermission('leads:bulk'), bulkUploadLeads);
 router.post('/bulk-transfer', auth, checkPermission('leads:transfer'), checkHierarchy, bulkTransferLeads);
 router.post('/bulk-delete', auth, checkPermission('leads:bulk-delete'), checkHierarchy, bulkDeleteLeads);
