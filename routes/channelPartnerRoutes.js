@@ -21,7 +21,7 @@ router.post('/', auth, checkPermission('channel-partner:create'), createChannelP
 router.get('/', auth, checkPermission('channel-partner:read_all'), getChannelPartners);
 router.get('/:id', auth, checkPermission('channel-partner:read'), getChannelPartnerById);
 router.get('/:id/photo', auth, checkPermission('channel-partner:read'), serveChannelPartnerPhoto);
-router.put('/:id', auth, checkPermission('channel-partner:update'), superadmin, updateChannelPartner);
+router.put('/:id', auth, checkPermission('channel-partner:update'), updateChannelPartner);
 router.delete('/:id', auth, checkPermission('channel-partner:delete'), superadmin, deleteChannelPartner);
 router.post('/bulk-create', auth, checkPermission('channel-partner:bulk-create'), superadmin, bulkCreateChannelPartners);
 router.post('/bulk-update', auth, checkPermission('channel-partner:bulk-update'), superadmin, bulkUpdateChannelPartners);
