@@ -94,19 +94,19 @@ const rateLimiters = {
 
   // Lead creation/updates (business critical)
   leads: rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100, // 100 lead operations per minute
+    windowMs: 1 * 1000, // 1 second
+   // 1 lead operation per second
     message: {
       error: 'Lead operation rate limit exceeded',
       message: 'Too many lead operations. Please slow down.',
-      retryAfter: '1 minute'
+      retryAfter: '1 second'
     },
     standardHeaders: true,
     legacyHeaders: false,
     store: new MongoStore({
       uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
       collectionName: 'lead_rate_limits',
-      expireTimeMs: 1 * 60 * 1000
+      expireTimeMs: 1 * 1000
     })
   }),
 
