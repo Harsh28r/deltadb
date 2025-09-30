@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const { checkPermission, checkHierarchy } = require('../middleware/rbacMiddleware');
 const {
   createReporting,
+  createOrUpdateReportingByUserId,
   getHierarchy,
   getAllUserReportings,
   updateReporting,
@@ -13,6 +14,7 @@ const {
 } = require('../controllers/userReportingController');
 
 router.post('/', auth, checkPermission('user-reporting:create'), createReporting);
+router.put('/user/:userId', auth, checkPermission('user-reporting:update'), checkHierarchy, createOrUpdateReportingByUserId);
 router.get('/hierarchy/:userId', auth, checkPermission('user-reporting:read'), checkHierarchy, getHierarchy);
 router.get('/', auth, checkPermission('user-reporting:read'), getAllUserReportings);
 router.put('/:id', auth, checkPermission('user-reporting:update'), checkHierarchy, updateReporting);

@@ -40,6 +40,67 @@ const generatePath = async (userId) => {
     : `/${userId}/`;
 };
 
+// Helper function to create or update reporting relationship by user ID
+const createOrUpdateReportingByUserId = async (req, res) => {
+  const { userId } = req.params;
+  const { error } = updateReportingSchema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.details[0].message });
+
+  try {
+    const user = await User.findById(userId).lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Find existing reporting relationship
+    let reporting = await UserReporting.findOne({ user: userId });
+    
+    if (reporting) {
+      // Update existing
+      reporting.reportsTo = req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
+        user: r.userId,
+        teamType: r.teamType,
+        project: r.projectId,
+        context: r.context || '',
+        path: await generatePath(r.userId)
+      }))) : [];
+      reporting.level = user.level;
+      await reporting.save();
+      
+      return res.json({ 
+        message: 'Reporting relationship updated successfully',
+        reporting 
+      });
+    } else {
+      // Create new
+      reporting = new UserReporting({
+        user: userId,
+        reportsTo: req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
+          user: r.userId,
+          teamType: r.teamType,
+          project: r.projectId,
+          context: r.context || '',
+          path: await generatePath(r.userId)
+        }))) : [],
+        level: user.level
+      });
+      await reporting.save();
+      
+      return res.status(201).json({ 
+        message: 'Reporting relationship created successfully',
+        reporting 
+      });
+    }
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ 
+        message: 'Duplicate reporting relationship detected',
+        error: 'Please ensure no duplicate relationships exist'
+      });
+    }
+    console.error('createOrUpdateReportingByUserId - Error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const createReporting = async (req, res) => {
   const { error } = createReportingSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
@@ -48,21 +109,50 @@ const createReporting = async (req, res) => {
     const user = await User.findById(req.body.userId).lean();
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const reporting = new UserReporting({
-      user: req.body.userId,
-      reportsTo: req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
+    // Check if UserReporting already exists for this user
+    let reporting = await UserReporting.findOne({ user: req.body.userId });
+    
+    if (reporting) {
+      // Update existing reporting relationship
+      reporting.reportsTo = req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
         user: r.userId,
         teamType: r.teamType,
         project: r.projectId,
         context: r.context || '',
         path: await generatePath(r.userId)
-      }))) : [],
-      level: user.level
-    });
-    await reporting.save();
-    res.status(201).json(reporting);
+      }))) : [];
+      reporting.level = user.level; // Update level in case it changed
+      await reporting.save();
+      return res.status(200).json({ 
+        message: 'Reporting relationship updated successfully',
+        reporting 
+      });
+    } else {
+      // Create new reporting relationship
+      reporting = new UserReporting({
+        user: req.body.userId,
+        reportsTo: req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
+          user: r.userId,
+          teamType: r.teamType,
+          project: r.projectId,
+          context: r.context || '',
+          path: await generatePath(r.userId)
+        }))) : [],
+        level: user.level
+      });
+      await reporting.save();
+      return res.status(201).json({ 
+        message: 'Reporting relationship created successfully',
+        reporting 
+      });
+    }
   } catch (err) {
-    if (err.code === 11000) return res.status(409).json({ message: 'Duplicate reporting relationship' });
+    if (err.code === 11000) {
+      return res.status(409).json({ 
+        message: 'Duplicate reporting relationship - please use update endpoint instead',
+        error: 'Use PUT /api/user-reporting/:id to update existing relationships'
+      });
+    }
     console.error('createReporting - Error:', err.message);
     res.status(500).json({ message: err.message });
   }
@@ -153,6 +243,10 @@ const updateReporting = async (req, res) => {
     const reporting = await UserReporting.findById(id);
     if (!reporting) return res.status(404).json({ message: 'Reporting not found' });
 
+    // Validate that the user still exists
+    const user = await User.findById(reporting.user);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
     reporting.reportsTo = req.body.reportsTo ? await Promise.all(req.body.reportsTo.map(async r => ({
       user: r.userId,
       teamType: r.teamType,
@@ -160,10 +254,20 @@ const updateReporting = async (req, res) => {
       context: r.context || '',
       path: await generatePath(r.userId)
     }))) : [];
+    reporting.level = user.level; // Update level in case it changed
     await reporting.save();
-    res.json(reporting);
+    
+    res.json({ 
+      message: 'Reporting relationship updated successfully',
+      reporting 
+    });
   } catch (err) {
-    if (err.code === 11000) return res.status(409).json({ message: 'Duplicate reporting relationship' });
+    if (err.code === 11000) {
+      return res.status(409).json({ 
+        message: 'Duplicate reporting relationship detected',
+        error: 'Please ensure no duplicate relationships exist'
+      });
+    }
     console.error('updateReporting - Error:', err.message);
     res.status(500).json({ message: err.message });
   }
@@ -209,5 +313,6 @@ module.exports = {
   updateReporting,
   deleteReporting,
   bulkUpdateUserReportings,
+  createOrUpdateReportingByUserId,
   bulkDeleteUserReportings
 };

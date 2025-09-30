@@ -131,6 +131,21 @@ const createProject = async (req, res) => {
       .populate('members', 'name email role level mobile companyName')
       .populate('managers', 'name email role level mobile companyName');
     const rolePermsMap = await buildRolePermsMapForProjects(populated);
+
+    // Send notification to project owner
+    if (global.notificationService && ownerId) {
+      await global.notificationService.sendNotification(ownerId.toString(), {
+        type: 'project_created',
+        title: 'New Project Created',
+        message: `Project "${name}" has been created`,
+        data: {
+          projectId: project._id,
+          projectName: name
+        },
+        priority: 'normal'
+      });
+    }
+
     res.status(201).json(shapeProject(populated, rolePermsMap));
   } catch (error) {
     console.error('Error creating project:', error);
@@ -205,6 +220,21 @@ const addMember = async (req, res) => {
       .populate('members', 'name email role level mobile companyName')
       .populate('managers', 'name email role level mobile companyName');
     const rolePermsMap = await buildRolePermsMapForProjects(populated);
+
+    // Send notification to new member
+    if (global.notificationService) {
+      await global.notificationService.sendNotification(userId.toString(), {
+        type: 'project_member_added',
+        title: 'Added to Project',
+        message: `You have been added to project "${project.name}"`,
+        data: {
+          projectId: project._id,
+          projectName: project.name
+        },
+        priority: 'normal'
+      });
+    }
+
     res.json({ message: 'Member added', project: shapeProject(populated, rolePermsMap) });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -234,6 +264,21 @@ const bulkAddMembers = async (req, res) => {
       .populate('members', 'name email role level mobile companyName')
       .populate('managers', 'name email role level mobile companyName');
     const rolePermsMap = await buildRolePermsMapForProjects(populated);
+
+    // Send notification to all new members
+    if (global.notificationService && uniqueIds.length > 0) {
+      await global.notificationService.sendBulkNotification(uniqueIds, {
+        type: 'project_member_added',
+        title: 'Added to Project',
+        message: `You have been added to project "${project.name}"`,
+        data: {
+          projectId: project._id,
+          projectName: project.name
+        },
+        priority: 'normal'
+      });
+    }
+
     res.json({ message: 'Members added', project: shapeProject(populated, rolePermsMap) });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Server error' });

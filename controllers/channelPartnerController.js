@@ -134,6 +134,21 @@ const createChannelPartner = async (req, res) => {
       photo: channelPartner.photo ? `/api/channel-partner/${channelPartner._id}/photo` : null // Secure URL endpoint
     };
 
+    // Send notification to superadmins and managers
+    if (global.notificationService) {
+      await global.notificationService.sendRoleNotification('superadmin', {
+        type: 'channel_partner_created',
+        title: 'New Channel Partner',
+        message: `Channel Partner "${req.body.name}" has been created`,
+        data: {
+          channelPartnerId: channelPartner._id,
+          name: req.body.name,
+          createdBy: req.user._id
+        },
+        priority: 'normal'
+      });
+    }
+
     res.status(201).json(response);
   } catch (err) {
     // Clean up uploaded file on error

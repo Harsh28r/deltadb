@@ -164,6 +164,61 @@ const createLead = async (req, res) => {
       data: { ...req.body, currentStatusId: defaultStatus._id.toString(), cpSourcingId }
     });
 
+    // Send notification to lead owner and superadmins
+    if (global.notificationService) {
+      if (req.body.userId !== req.user._id.toString()) {
+        // Lead assigned to another user - notify them + hierarchy
+        const notification = {
+          type: 'lead_created',
+          title: 'New Lead Assigned',
+          message: `A new lead has been assigned to you`,
+          data: {
+            leadId: lead._id,
+            projectId: resolvedProjectId,
+            createdBy: req.user._id
+          },
+          priority: 'normal'
+        };
+
+        const hierarchyNotif = {
+          ...notification,
+          title: '[Team] New Lead Created & Assigned',
+          message: `Lead ${lead._id} created and assigned to user ${req.body.userId}`
+        };
+
+        await global.notificationService.sendNotificationWithSuperadmin(req.body.userId, notification, hierarchyNotif);
+      } else {
+        // User created lead for themselves - notify hierarchy
+        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'lead_created',
+          title: 'Lead Created',
+          message: `User created new lead ${lead._id}`,
+          data: {
+            leadId: lead._id,
+            projectId: resolvedProjectId,
+            createdBy: req.user._id
+          },
+          priority: 'normal'
+        });
+      }
+
+      // Also notify creator's hierarchy about the creation activity
+      if (req.body.userId !== req.user._id.toString()) {
+        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'lead_created',
+          title: 'Lead Created',
+          message: `User created and assigned lead ${lead._id} to ${req.body.userId}`,
+          data: {
+            leadId: lead._id,
+            projectId: resolvedProjectId,
+            assignedTo: req.body.userId,
+            createdBy: req.user._id
+          },
+          priority: 'normal'
+        });
+      }
+    }
+
     res.status(201).json(lead);
   } catch (err) {
     console.error('createLead - Error:', err.message);
@@ -370,6 +425,21 @@ const editLead = async (req, res) => {
       newData: lead.toObject()
     });
 
+    // Notify hierarchy about lead update
+    if (global.notificationService) {
+      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+        type: 'lead_updated',
+        title: 'Lead Updated',
+        message: `User updated lead ${lead._id}`,
+        data: {
+          leadId: lead._id,
+          projectId: lead.project,
+          updatedBy: req.user._id
+        },
+        priority: 'normal'
+      });
+    }
+
     res.json(lead);
   } catch (err) {
     console.error('editLead - Error:', err.message);
@@ -390,6 +460,21 @@ const deleteLead = async (req, res) => {
 
     await logLeadActivity(lead._id, req.user._id, 'deleted', { data: lead.toObject() });
     await lead.deleteOne();
+
+    // Notify hierarchy about lead deletion
+    if (global.notificationService) {
+      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+        type: 'lead_deleted',
+        title: 'Lead Deleted',
+        message: `User deleted lead ${lead._id}`,
+        data: {
+          leadId: lead._id,
+          projectId: lead.project,
+          deletedBy: req.user._id
+        },
+        priority: 'normal'
+      });
+    }
 
     res.json({ message: 'Lead deleted' });
   } catch (err) {
@@ -458,6 +543,71 @@ const bulkTransferLeads = async (req, res) => {
         oldProject: lead.project?.toString(),
         newProject: projectId
       });
+    }
+
+    // Send notification to new lead owner and superadmins
+    if (global.notificationService && result.modifiedCount > 0) {
+      // Get user info for better context
+      const User = require('../models/User');
+      const transferredByUser = await User.findById(req.user._id).select('name email').lean();
+      const transferredByName = transferredByUser ? transferredByUser.name : 'Unknown User';
+
+      const notification = {
+        type: 'lead_transferred',
+        title: 'Leads Assigned to You',
+        message: `${result.modifiedCount} lead(s) have been transferred to you by ${transferredByName}`,
+        data: {
+          leadIds,
+          fromUser,
+          projectId,
+          transferredBy: req.user._id,
+          transferredByName,
+          transferredByEmail: transferredByUser?.email
+        },
+        priority: 'high'
+      };
+
+      const hierarchyNotif = {
+        ...notification,
+        title: '[Team Activity] Leads Transferred',
+        message: `${result.modifiedCount} lead(s) transferred from ${fromUser} to ${toUser} by ${transferredByName}`,
+        data: {
+          ...notification.data,
+          toUser
+        }
+      };
+
+      // Send to new lead owner and their hierarchy (including superadmins)
+      await global.notificationService.sendNotificationWithSuperadmin(toUser, notification, hierarchyNotif);
+
+      // Also notify the person who did the transfer (their hierarchy)
+      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+        type: 'lead_transferred',
+        title: '[Action] Leads Transferred',
+        message: `You transferred ${result.modifiedCount} lead(s) from ${fromUser} to ${toUser}`,
+        data: {
+          leadIds,
+          fromUser,
+          toUser,
+          projectId,
+          transferredBy: req.user._id,
+          transferredByName
+        },
+        priority: 'high'
+      });
+
+      // Send individual notifications for each transferred lead
+      for (const lead of leads) {
+        try {
+          await global.notificationService.sendLeadAssignmentNotification(
+            lead,
+            toUser,
+            req.user._id
+          );
+        } catch (error) {
+          console.error(`Failed to send individual lead assignment notification for lead ${lead._id}:`, error);
+        }
+      }
     }
 
     res.json({ message: 'Leads transferred', modifiedCount: result.modifiedCount });

@@ -155,7 +155,11 @@ const createTask = async (req, res) => {
       updatedBy: req.user._id
     });
     await reminder.save({ context: { userId: req.user._id } });
-    // await logNotification(assignedTo, 'in-app', `Reminder: ${title}`, { type: 'reminder', id: reminder._id });
+
+    // Send notification to assigned user
+    if (global.notificationService && assignedTo !== req.user._id.toString()) {
+      await global.notificationService.sendTaskAssignmentNotification(task, assignedTo, req.user._id);
+    }
 
     res.status(201).json(task);
   } catch (err) {
@@ -328,6 +332,22 @@ const changeTaskStatus = async (req, res) => {
       newData
     });
 
+    // Send notification to task owner if status changed
+    if (global.notificationService && task.assignedTo.toString() !== req.user._id.toString()) {
+      await global.notificationService.sendNotification(task.assignedTo.toString(), {
+        type: 'task_status_changed',
+        title: 'Task Status Updated',
+        message: `Your task "${task.title}" status has been changed to ${newStatus}`,
+        data: {
+          taskId: task._id,
+          oldStatus: task.status,
+          newStatus,
+          changedBy: req.user._id
+        },
+        priority: newStatus === 'completed' ? 'normal' : 'high'
+      });
+    }
+
     res.json(task);
   } catch (err) {
     console.error('changeTaskStatus - Error:', err.message);
@@ -379,6 +399,21 @@ const bulkTransferTasks = async (req, res) => {
         toUser: toUserId,
         taskType: task.taskType,
         relatedId: task.relatedId
+      });
+    }
+
+    // Send notification to new task owner
+    if (global.notificationService && result.modifiedCount > 0) {
+      await global.notificationService.sendNotification(toUserId, {
+        type: 'task_transferred',
+        title: 'Tasks Assigned to You',
+        message: `${result.modifiedCount} task(s) have been transferred to you`,
+        data: {
+          taskIds,
+          fromUser: fromUserId,
+          transferredBy: req.user._id
+        },
+        priority: 'high'
       });
     }
 

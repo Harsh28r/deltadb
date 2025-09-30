@@ -1,0 +1,1022 @@
+{
+  "info": {
+    "name": "Hierarchical Notifications Test Collection",
+    "description": "Comprehensive test collection for the hierarchical notification system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "manager_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "superadmin_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "project_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lead_source_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lead_status_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_status_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lead_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login as Superadmin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"superadmin@deltayards.com\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/superadmin/admin-login",
+              "host": ["{{base_url}}"],
+              "path": ["superadmin", "admin-login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('auth_token', response.token);",
+                  "    pm.collectionVariables.set('superadmin_id', response.user._id);",
+                  "    console.log('Superadmin token set:', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"manager@deltayards.com\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/superadmin/admin-login",
+              "host": ["{{base_url}}"],
+              "path": ["superadmin", "admin-login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('manager_id', response.user._id);",
+                  "    console.log('Manager ID set:', response.user._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@deltayards.com\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/superadmin/admin-login",
+              "host": ["{{base_url}}"],
+              "path": ["superadmin", "admin-login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('user_id', response.user._id);",
+                  "    console.log('User ID set:', response.user._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Setup Data",
+      "item": [
+        {
+          "name": "Get Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/projects",
+              "host": ["{{base_url}}"],
+              "path": ["projects"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.projects && response.projects.length > 0) {",
+                  "        pm.collectionVariables.set('project_id', response.projects[0]._id);",
+                  "        console.log('Project ID set:', response.projects[0]._id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Lead Sources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/lead-sources",
+              "host": ["{{base_url}}"],
+              "path": ["lead-sources"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.leadSources && response.leadSources.length > 0) {",
+                  "        pm.collectionVariables.set('lead_source_id', response.leadSources[0]._id);",
+                  "        console.log('Lead Source ID set:', response.leadSources[0]._id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Lead Statuses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/lead-statuses",
+              "host": ["{{base_url}}"],
+              "path": ["lead-statuses"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.leadStatuses && response.leadStatuses.length > 0) {",
+                  "        pm.collectionVariables.set('lead_status_id', response.leadStatuses[0]._id);",
+                  "        if (response.leadStatuses.length > 1) {",
+                  "            pm.collectionVariables.set('new_status_id', response.leadStatuses[1]._id);",
+                  "        }",
+                  "        console.log('Lead Status IDs set');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Lead Assignment Tests",
+      "item": [
+        {
+          "name": "Create Lead (Assignment Test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": \"{{user_id}}\",\n  \"project\": \"{{project_id}}\",\n  \"leadSource\": \"{{lead_source_id}}\",\n  \"currentStatus\": \"{{lead_status_id}}\",\n  \"customData\": {\n    \"customerName\": \"Test Customer for Assignment\",\n    \"phone\": \"+1234567890\",\n    \"email\": \"testcustomer@example.com\",\n    \"propertyType\": \"2BHK\",\n    \"budget\": \"5000000\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/leads",
+              "host": ["{{base_url}}"],
+              "path": ["leads"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('lead_id', response.lead._id);",
+                  "    console.log('Lead created for assignment test:', response.lead._id);",
+                  "    ",
+                  "    // Check if response includes notification info",
+                  "    console.log('Lead assignment notification should be sent to user:', pm.collectionVariables.get('user_id'));",
+                  "    console.log('Hierarchy notifications should be sent to managers and superadmins');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Notifications After Lead Creation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{user_id}}&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{user_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('User notifications:', response.notifications.length);",
+                  "    ",
+                  "    // Look for lead assignment notification",
+                  "    const assignmentNotif = response.notifications.find(n => n.type === 'lead_assigned');",
+                  "    if (assignmentNotif) {",
+                  "        console.log('✅ Lead assignment notification found:', assignmentNotif.title);",
+                  "        console.log('Notification message:', assignmentNotif.message);",
+                  "    } else {",
+                  "        console.log('❌ Lead assignment notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Manager Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{manager_id}}&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{manager_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('Manager notifications:', response.notifications.length);",
+                  "    ",
+                  "    // Look for team activity notifications",
+                  "    const teamNotif = response.notifications.find(n => n.title.includes('[Team Activity]'));",
+                  "    if (teamNotif) {",
+                  "        console.log('✅ Team activity notification found:', teamNotif.title);",
+                  "        console.log('Notification message:', teamNotif.message);",
+                  "    } else {",
+                  "        console.log('❌ Team activity notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Superadmin Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{superadmin_id}}&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{superadmin_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('Superadmin notifications:', response.notifications.length);",
+                  "    ",
+                  "    // Look for team activity notifications",
+                  "    const teamNotif = response.notifications.find(n => n.title.includes('[Team Activity]'));",
+                  "    if (teamNotif) {",
+                  "        console.log('✅ Superadmin received team activity notification:', teamNotif.title);",
+                  "        console.log('Notification message:', teamNotif.message);",
+                  "    } else {",
+                  "        console.log('❌ Superadmin team activity notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Lead Status Change Tests",
+      "item": [
+        {
+          "name": "Change Lead Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newStatusId\": \"{{new_status_id}}\",\n  \"newData\": {\n    \"notes\": \"Status changed for testing hierarchical notifications\",\n    \"followUpDate\": \"2024-01-15\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/leads/{{lead_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["leads", "{{lead_id}}", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Lead status changed successfully');",
+                  "    console.log('Status change notifications should be sent to:');",
+                  "    console.log('- Lead owner and their hierarchy');",
+                  "    console.log('- Person who made the change and their hierarchy');",
+                  "    console.log('- Project stakeholders');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Status Change Notifications - User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{user_id}}&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{user_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    // Look for lead status change notification",
+                  "    const statusNotif = response.notifications.find(n => n.type === 'lead_status_change');",
+                  "    if (statusNotif) {",
+                  "        console.log('✅ Lead status change notification found:', statusNotif.title);",
+                  "        console.log('Notification message:', statusNotif.message);",
+                  "        console.log('Notification data:', JSON.stringify(statusNotif.data, null, 2));",
+                  "    } else {",
+                  "        console.log('❌ Lead status change notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Status Change Notifications - Manager",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{manager_id}}&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{manager_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    // Look for team activity status change notification",
+                  "    const teamStatusNotif = response.notifications.find(n => ",
+                  "        n.title.includes('[Team Activity]') && ",
+                  "        n.type === 'lead_status_change'",
+                  "    );",
+                  "    if (teamStatusNotif) {",
+                  "        console.log('✅ Manager received team status change notification:', teamStatusNotif.title);",
+                  "        console.log('Notification message:', teamStatusNotif.message);",
+                  "        console.log('Changed by:', teamStatusNotif.data.changedByName);",
+                  "    } else {",
+                  "        console.log('❌ Manager team status change notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Status Change Notifications - Superadmin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{superadmin_id}}&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{superadmin_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    // Look for team activity status change notification",
+                  "    const teamStatusNotif = response.notifications.find(n => ",
+                  "        n.title.includes('[Team Activity]') && ",
+                  "        n.type === 'lead_status_change'",
+                  "    );",
+                  "    if (teamStatusNotif) {",
+                  "        console.log('✅ Superadmin received team status change notification:', teamStatusNotif.title);",
+                  "        console.log('Notification message:', teamStatusNotif.message);",
+                  "        console.log('Changed by:', teamStatusNotif.data.changedByName);",
+                  "    } else {",
+                  "        console.log('❌ Superadmin team status change notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Lead Transfer Tests",
+      "item": [
+        {
+          "name": "Transfer Lead to Another User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromUser\": \"{{user_id}}\",\n  \"toUser\": \"{{manager_id}}\",\n  \"leadIds\": [\"{{lead_id}}\"],\n  \"projectId\": \"{{project_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/leads/bulk-transfer",
+              "host": ["{{base_url}}"],
+              "path": ["leads", "bulk-transfer"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Lead transfer successful:', response.modifiedCount, 'leads transferred');",
+                  "    console.log('Transfer notifications should be sent to:');",
+                  "    console.log('- New lead owner and their hierarchy');",
+                  "    console.log('- Person who did the transfer and their hierarchy');",
+                  "    console.log('- Individual lead assignment notifications');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Transfer Notifications - New Owner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{manager_id}}&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{manager_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    // Look for lead transferred notification",
+                  "    const transferNotif = response.notifications.find(n => n.type === 'lead_transferred');",
+                  "    if (transferNotif) {",
+                  "        console.log('✅ Lead transfer notification found:', transferNotif.title);",
+                  "        console.log('Notification message:', transferNotif.message);",
+                  "        console.log('Transferred by:', transferNotif.data.transferredByName);",
+                  "    } else {",
+                  "        console.log('❌ Lead transfer notification not found');",
+                  "    }",
+                  "    ",
+                  "    // Look for lead assigned notification",
+                  "    const assignNotif = response.notifications.find(n => n.type === 'lead_assigned');",
+                  "    if (assignNotif) {",
+                  "        console.log('✅ Lead assignment notification found:', assignNotif.title);",
+                  "    } else {",
+                  "        console.log('❌ Lead assignment notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Transfer Notifications - Transferrer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{superadmin_id}}&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{superadmin_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    // Look for action notification",
+                  "    const actionNotif = response.notifications.find(n => n.title.includes('[Action]'));",
+                  "    if (actionNotif) {",
+                  "        console.log('✅ Action notification found:', actionNotif.title);",
+                  "        console.log('Notification message:', actionNotif.message);",
+                  "    } else {",
+                  "        console.log('❌ Action notification not found');",
+                  "    }",
+                  "    ",
+                  "    // Look for team activity notification",
+                  "    const teamNotif = response.notifications.find(n => n.title.includes('[Team Activity]'));",
+                  "    if (teamNotif) {",
+                  "        console.log('✅ Team activity notification found:', teamNotif.title);",
+                  "    } else {",
+                  "        console.log('❌ Team activity notification not found');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notification Verification",
+      "item": [
+        {
+          "name": "Get All Notifications for User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{user_id}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{user_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('=== USER NOTIFICATIONS SUMMARY ===');",
+                  "    console.log('Total notifications:', response.notifications.length);",
+                  "    ",
+                  "    response.notifications.forEach((notif, index) => {",
+                  "        console.log(`\\n${index + 1}. ${notif.title}`);",
+                  "        console.log(`   Type: ${notif.type}`);",
+                  "        console.log(`   Message: ${notif.message}`);",
+                  "        console.log(`   Priority: ${notif.priority}`);",
+                  "        console.log(`   Read: ${notif.read}`);",
+                  "        console.log(`   Created: ${notif.createdAt}`);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get All Notifications for Manager",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{manager_id}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{manager_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('=== MANAGER NOTIFICATIONS SUMMARY ===');",
+                  "    console.log('Total notifications:', response.notifications.length);",
+                  "    ",
+                  "    const teamNotifications = response.notifications.filter(n => n.title.includes('[Team Activity]'));",
+                  "    console.log('Team activity notifications:', teamNotifications.length);",
+                  "    ",
+                  "    teamNotifications.forEach((notif, index) => {",
+                  "        console.log(`\\n${index + 1}. ${notif.title}`);",
+                  "        console.log(`   Type: ${notif.type}`);",
+                  "        console.log(`   Message: ${notif.message}`);",
+                  "        console.log(`   Actor: ${notif.data.actorName || notif.data.changedByName || 'Unknown'}`);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get All Notifications for Superadmin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications?recipient={{superadmin_id}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{superadmin_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('=== SUPERADMIN NOTIFICATIONS SUMMARY ===');",
+                  "    console.log('Total notifications:', response.notifications.length);",
+                  "    ",
+                  "    const teamNotifications = response.notifications.filter(n => n.title.includes('[Team Activity]'));",
+                  "    const actionNotifications = response.notifications.filter(n => n.title.includes('[Action]'));",
+                  "    ",
+                  "    console.log('Team activity notifications:', teamNotifications.length);",
+                  "    console.log('Action notifications:', actionNotifications.length);",
+                  "    ",
+                  "    console.log('\\n=== TEAM ACTIVITY NOTIFICATIONS ===');",
+                  "    teamNotifications.forEach((notif, index) => {",
+                  "        console.log(`\\n${index + 1}. ${notif.title}`);",
+                  "        console.log(`   Type: ${notif.type}`);",
+                  "        console.log(`   Message: ${notif.message}`);",
+                  "        console.log(`   Actor: ${notif.data.actorName || notif.data.changedByName || 'Unknown'}`);",
+                  "    });",
+                  "    ",
+                  "    console.log('\\n=== ACTION NOTIFICATIONS ===');",
+                  "    actionNotifications.forEach((notif, index) => {",
+                  "        console.log(`\\n${index + 1}. ${notif.title}`);",
+                  "        console.log(`   Type: ${notif.type}`);",
+                  "        console.log(`   Message: ${notif.message}`);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Test Notification Endpoints",
+      "item": [
+        {
+          "name": "Test Notification Creation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{user_id}}\",\n  \"type\": \"test\",\n  \"title\": \"Test Hierarchical Notification\",\n  \"message\": \"This is a test notification to verify the hierarchical system\",\n  \"data\": {\n    \"testType\": \"hierarchical_verification\",\n    \"timestamp\": \"{{$timestamp}}\"\n  },\n  \"priority\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Test notification created successfully');",
+                  "    console.log('Notification ID:', response.notification._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"read\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "{{notification_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Unread Notifications Count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications/unread-count?recipient={{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "unread-count"],
+              "query": [
+                {
+                  "key": "recipient",
+                  "value": "{{user_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('Unread notifications count for user:', response.unreadCount);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,52 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { corsOptions, adminLoginCorsOptions, corsDebug } = require('./middleware/cors');
 
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (error) => {
+  console.error('🚨 UNCAUGHT EXCEPTION! 💥 Shutting down...');
+  console.error('Error:', error.message);
+  console.error('Stack:', error.stack);
+  
+  // Log the error but don't exit in production to prevent downtime
+  if (process.env.NODE_ENV !== 'production') {
+    process.exit(1);
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 UNHANDLED REJECTION! 💥');
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+  
+  // Log the error but don't exit in production
+  if (process.env.NODE_ENV !== 'production') {
+    process.exit(1);
+  }
+});
+
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+  console.log('📡 SIGTERM received. Shutting down gracefully...');
+  server.close(() => {
+    console.log('✅ Server closed');
+    mongoose.connection.close(false, () => {
+      console.log('✅ MongoDB connection closed');
+      process.exit(0);
+    });
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('📡 SIGINT received. Shutting down gracefully...');
+  server.close(() => {
+    console.log('✅ Server closed');
+    mongoose.connection.close(false, () => {
+      console.log('✅ MongoDB connection closed');
+      process.exit(0);
+    });
+  });
+});
+
 // const userRoutes = require('./routes/userRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 // const taskRoutes = require('./routes/taskRoutes');
@@ -28,8 +74,9 @@ const initLeadSource = require('./scripts/initLeadSource');
 const imageRoutes = require('./routes/images'); // Adjust path
 const dashBoardRoutes = require('./routes/dashBoardRoutes');
 const taskRoutes = require('./routes/taskRoutes');
-const reminderRoutes = require('./routes/reminderRoutes'); 
-const { smartRateLimiter } = require('./middleware/rateLimiter');
+const reminderRoutes = require('./routes/reminderRoutes');
+const testNotificationRoutes = require('./routes/testNotificationRoutes');
+// const { smartRateLimiter } = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 const { globalErrorHandler } = require('./middleware/errorHandler');
 
@@ -75,7 +122,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 // Apply rate limiting
-app.use(smartRateLimiter);
+// app.use(smartRateLimiter);
 
 // Apply request logging
 app.use(logger.createRequestMiddleware());
@@ -188,6 +235,7 @@ app.use('/', imageRoutes);
 app.use('/api/dashboard', dashBoardRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reminder', reminderRoutes);
+app.use('/api/test', testNotificationRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
@@ -305,15 +353,34 @@ const startServer = async () => {
       console.log('✅ Database optimizations applied');
     } catch (error) {
       console.warn('⚠️ Database optimization failed:', error.message);
+      console.warn('Stack trace:', error.stack);
+      // Don't let optimization failure prevent server startup
     }
 
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log('MongoDB connection status:', isMongoConnected);
-      initLeadSource();
-    });
+    try {
+      server.listen(PORT, async () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log('MongoDB connection status:', isMongoConnected);
+        
+        try {
+          await initLeadSource();
+          console.log('✅ Lead source initialization completed');
+        } catch (error) {
+          console.error('⚠️ Lead source initialization failed:', error.message);
+          console.error('Stack trace:', error.stack);
+          // Don't let lead source initialization failure crash the server
+        }
+        
+        console.log('🎉 Application startup completed successfully!');
+      });
+    } catch (error) {
+      console.error('❌ Failed to start server:', error.message);
+      console.error('Stack trace:', error.stack);
+      // Retry after 5 seconds
+      setTimeout(startServer, 5000);
+    }
   } else {
-    console.log('Waiting for MongoDB connection...');
+    console.log('⏳ Waiting for MongoDB connection...');
     setTimeout(startServer, 2000);
   }
 };

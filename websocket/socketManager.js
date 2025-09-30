@@ -154,22 +154,13 @@ class SocketManager {
         ...notification,
         timestamp: new Date()
       });
+      console.log(`📤 WebSocket notification sent to user ${userId}`);
+    } else {
+      console.log(`⚠️ User ${userId} not connected to WebSocket`);
     }
 
-    // Store notification in database
-    try {
-      const notificationDoc = new Notification({
-        recipient: userId,
-        type: notification.type,
-        title: notification.title,
-        message: notification.message,
-        data: notification.data,
-        read: false
-      });
-      await notificationDoc.save();
-    } catch (error) {
-      console.error('Error saving notification:', error);
-    }
+    // Note: Database save is handled by NotificationService batch processing
+    // This method only handles real-time WebSocket delivery
   }
 
   // Broadcast to project members
