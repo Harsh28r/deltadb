@@ -969,6 +969,21 @@ const createUserWithRole = async (req, res) => {
       !(user.customPermissions?.denied || []).includes(permission)
     );
 
+    // Send notification to new user
+    if (global.notificationService) {
+      await global.notificationService.sendNotification(user._id.toString(), {
+        type: 'user_created',
+        title: 'Welcome!',
+        message: `Your account has been created with role: ${role.name}`,
+        data: {
+          userId: user._id,
+          role: role.name,
+          level: user.level
+        },
+        priority: 'high'
+      });
+    }
+
     res.status(201).json({
       message: 'User created successfully',
       user: {
@@ -1086,6 +1101,21 @@ const editUserWithRole = async (req, res) => {
     }
 
     await user.save();
+
+    // Send notification to user if role was changed
+    if (global.notificationService && roleName) {
+      await global.notificationService.sendNotification(user._id.toString(), {
+        type: 'role_changed',
+        title: 'Role Updated',
+        message: `Your role has been updated to: ${user.role}`,
+        data: {
+          userId: user._id,
+          newRole: user.role,
+          newLevel: user.level
+        },
+        priority: 'high'
+      });
+    }
 
     res.json({
       message: 'User updated successfully',

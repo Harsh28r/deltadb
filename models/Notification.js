@@ -2,8 +2,14 @@ const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['in-app', 'email', 'push'], required: true },
+  recipient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Alias for user
+  type: { type: String, required: true },
+  title: { type: String, trim: true },
   message: { type: String, required: true, trim: true },
+  data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  priority: { type: String, enum: ['normal', 'high', 'urgent'], default: 'normal' },
+  read: { type: Boolean, default: false },
+  readAt: { type: Date },
   status: { type: String, enum: ['sent', 'read', 'failed'], default: 'sent' },
   relatedEntity: {
     type: { type: String, trim: true },
@@ -20,8 +26,15 @@ notificationSchema.index({ type: 1 });
 notificationSchema.index({ status: 1 });
 notificationSchema.index({ 'relatedEntity.id': 1 });
 
-// Update timestamp on save
+// Sync user and recipient fields
 notificationSchema.pre('save', function (next) {
+  // Ensure user and recipient are synced
+  if (this.recipient && !this.user) {
+    this.user = this.recipient;
+  } else if (this.user && !this.recipient) {
+    this.recipient = this.user;
+  }
+
   this.updatedAt = Date.now();
   next();
 });

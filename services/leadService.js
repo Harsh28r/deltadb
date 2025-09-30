@@ -58,14 +58,24 @@ class LeadService {
 
       // Send notifications
       if (this.notificationService) {
-        await this.notificationService.sendNotification(
+        // Send lead assignment notification to the assigned user and their hierarchy
+        await this.notificationService.sendLeadAssignmentNotification(
+          lead,
           leadData.user,
+          createdBy
+        );
+
+        // Also send user activity notification to the creator's hierarchy
+        await this.notificationService.sendUserActivityNotification(
+          createdBy,
+          'lead_created',
           {
-            type: 'lead_created',
-            title: 'New Lead Assigned',
-            message: 'A new lead has been assigned to you',
-            data: { leadId: lead._id, projectId: leadData.project }
-          }
+            leadId: lead._id,
+            projectId: leadData.project,
+            assignedTo: leadData.user,
+            leadSource: leadData.leadSource
+          },
+          `Created a new lead and assigned it to team member`
         );
       }
 
@@ -330,6 +340,21 @@ class LeadService {
       if (this.notificationService && oldStatus && newStatus) {
         await this.notificationService.sendLeadStatusNotification(
           lead, oldStatus, newStatus, userId
+        );
+
+        // Also send user activity notification for status change
+        await this.notificationService.sendUserActivityNotification(
+          userId,
+          'lead_status_changed',
+          {
+            leadId: lead._id,
+            projectId: lead.project,
+            oldStatus: oldStatus.name,
+            newStatus: newStatus.name,
+            oldStatusId: oldStatus._id,
+            newStatusId: newStatus._id
+          },
+          `Changed lead status from "${oldStatus.name}" to "${newStatus.name}"`
         );
       }
 

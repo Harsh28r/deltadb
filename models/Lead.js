@@ -91,6 +91,16 @@ leadSchema.methods.changeStatus = async function (newStatusId, newData, userId) 
       newData
     });
 
+    // Send notification
+    if (global.notificationService) {
+      await global.notificationService.sendLeadStatusNotification(
+        this,
+        currentStatus,
+        newStatus,
+        userId
+      );
+    }
+
     return this;
   } catch (error) {
     console.error('Lead changeStatus - Error:', error.message);

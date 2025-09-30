@@ -69,8 +69,10 @@ const getNotifications = async (req, res) => {
     const totalItems = await Notification.countDocuments(query);
     const totalPages = Math.ceil(totalItems / limit);
     const notifications = await Notification.find(query)
-      .select('user type message status relatedEntity timestamp createdAt updatedAt')
-      .populate('user', 'name email _id')
+      .select('user recipient type title message data priority read readAt status relatedEntity timestamp createdAt updatedAt createdBy')
+      .populate('user', 'name email _id role')
+      .populate('recipient', 'name email _id role')
+      .populate('createdBy', 'name email _id role')
       .populate('relatedEntity.id', 'name _id')
       .sort({ timestamp: -1 })
       .skip((page - 1) * limit)

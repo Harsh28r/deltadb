@@ -54,8 +54,14 @@ class DatabaseOptimizer {
       this.logOptimizationStats();
 
     } catch (error) {
-      console.error('❌ Database optimization failed:', error);
-      throw error;
+      console.error('❌ Database optimization failed:', error.message);
+      console.error('Stack trace:', error.stack);
+      
+      // Log optimization stats even if there were errors
+      this.logOptimizationStats();
+      
+      // Re-throw the error but with better logging
+      throw new Error(`Database optimization failed: ${error.message}`);
     }
   }
 
@@ -63,40 +69,46 @@ class DatabaseOptimizer {
    * Optimize User model indexes
    */
   async optimizeUserIndexes() {
-    const User = mongoose.model('User');
+    try {
+      const User = mongoose.model('User');
 
-    const indexes = [
-      // Authentication queries
-      { email: 1 }, // Login queries
-      { email: 1, isActive: 1 }, // Active user login
+      const indexes = [
+        // Authentication queries
+        { email: 1 }, // Login queries
+        { email: 1, isActive: 1 }, // Active user login
 
-      // Role-based queries
-      { role: 1, level: 1 }, // Hierarchical queries
-      { level: 1, isActive: 1 }, // Active users by level
+        // Role-based queries
+        { role: 1, level: 1 }, // Hierarchical queries
+        { level: 1, isActive: 1 }, // Active users by level
 
-      // Permission queries
-      { role: 1, isActive: 1 }, // Role-based access
+        // Permission queries
+        { role: 1, isActive: 1 }, // Role-based access
 
-      // Project assignment queries
-      { 'restrictions.allowedProjects': 1 }, // Project access
-      { 'restrictions.deniedProjects': 1 }, // Project restrictions
+        // Project assignment queries
+        { 'restrictions.allowedProjects': 1 }, // Project access
+        { 'restrictions.deniedProjects': 1 }, // Project restrictions
 
-      // Compound indexes for complex queries
-      { role: 1, level: 1, isActive: 1, createdAt: -1 }, // User management queries
-      { email: 1, role: 1, isActive: 1 }, // Admin user searches
+        // Compound indexes for complex queries
+        { role: 1, level: 1, isActive: 1, createdAt: -1 }, // User management queries
+        { email: 1, role: 1, isActive: 1 }, // Admin user searches
 
-      // Text search index for names
-      { name: 'text', email: 'text' }
-    ];
+        // Text search index for names
+        { name: 'text', email: 'text' }
+      ];
 
-    await this.createIndexes(User, indexes, 'User');
+      await this.createIndexes(User, indexes, 'User');
+    } catch (error) {
+      console.error('❌ Error optimizing User indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize Lead model indexes
    */
   async optimizeLeadIndexes() {
-    const Lead = mongoose.model('Lead');
+    try {
+      const Lead = mongoose.model('Lead');
 
     const indexes = [
       // Basic queries
@@ -128,14 +140,19 @@ class DatabaseOptimizer {
       { leadSource: 1, currentStatus: 1 }
     ];
 
-    await this.createIndexes(Lead, indexes, 'Lead');
+      await this.createIndexes(Lead, indexes, 'Lead');
+    } catch (error) {
+      console.error('❌ Error optimizing Lead indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize Project model indexes
    */
   async optimizeProjectIndexes() {
-    const Project = mongoose.model('Project');
+    try {
+      const Project = mongoose.model('Project');
 
     const indexes = [
       // Basic queries
@@ -156,14 +173,19 @@ class DatabaseOptimizer {
       { name: 'text', location: 'text', developBy: 'text' }
     ];
 
-    await this.createIndexes(Project, indexes, 'Project');
+      await this.createIndexes(Project, indexes, 'Project');
+    } catch (error) {
+      console.error('❌ Error optimizing Project indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize Task model indexes
    */
   async optimizeTaskIndexes() {
-    const Task = mongoose.model('Task');
+    try {
+      const Task = mongoose.model('Task');
 
     const indexes = [
       // Assignment queries
@@ -187,14 +209,19 @@ class DatabaseOptimizer {
       { project: 1, assignedTo: 1, status: 1 }
     ];
 
-    await this.createIndexes(Task, indexes, 'Task');
+      await this.createIndexes(Task, indexes, 'Task');
+    } catch (error) {
+      console.error('❌ Error optimizing Task indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize Notification model indexes
    */
   async optimizeNotificationIndexes() {
-    const Notification = mongoose.model('Notification');
+    try {
+      const Notification = mongoose.model('Notification');
 
     const indexes = [
       // User notifications
@@ -215,17 +242,22 @@ class DatabaseOptimizer {
       { recipient: 1, priority: 1, read: 1 }
     ];
 
-    await this.createIndexes(Notification, indexes, 'Notification');
+      await this.createIndexes(Notification, indexes, 'Notification');
 
-    // Create TTL index for auto-cleanup (delete after 90 days)
-    await this.createTTLIndex(Notification, 'createdAt', 90 * 24 * 60 * 60);
+      // Create TTL index for auto-cleanup (delete after 90 days)
+      await this.createTTLIndex(Notification, 'createdAt', 90 * 24 * 60 * 60);
+    } catch (error) {
+      console.error('❌ Error optimizing Notification indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize Reminder model indexes
    */
   async optimizeReminderIndexes() {
-    const Reminder = mongoose.model('Reminder');
+    try {
+      const Reminder = mongoose.model('Reminder');
 
     const indexes = [
       // User reminders
@@ -245,14 +277,19 @@ class DatabaseOptimizer {
       { isRecurring: 1, reminderDate: 1 }
     ];
 
-    await this.createIndexes(Reminder, indexes, 'Reminder');
+      await this.createIndexes(Reminder, indexes, 'Reminder');
+    } catch (error) {
+      console.error('❌ Error optimizing Reminder indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize Lead Activity indexes
    */
   async optimizeLeadActivityIndexes() {
-    const LeadActivity = mongoose.model('LeadActivity');
+    try {
+      const LeadActivity = mongoose.model('LeadActivity');
 
     const indexes = [
       // Lead activity timeline
@@ -272,17 +309,22 @@ class DatabaseOptimizer {
       { createdAt: 1 }
     ];
 
-    await this.createIndexes(LeadActivity, indexes, 'LeadActivity');
+      await this.createIndexes(LeadActivity, indexes, 'LeadActivity');
 
-    // Create TTL index for auto-cleanup (delete after 365 days)
-    await this.createTTLIndex(LeadActivity, 'createdAt', 365 * 24 * 60 * 60);
+      // Create TTL index for auto-cleanup (delete after 365 days)
+      await this.createTTLIndex(LeadActivity, 'createdAt', 365 * 24 * 60 * 60);
+    } catch (error) {
+      console.error('❌ Error optimizing LeadActivity indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
    * Optimize User Reporting indexes
    */
   async optimizeUserReportingIndexes() {
-    const UserReporting = mongoose.model('UserReporting');
+    try {
+      const UserReporting = mongoose.model('UserReporting');
 
     const indexes = [
       // User reporting queries
@@ -298,7 +340,11 @@ class DatabaseOptimizer {
       { level: 1, 'reportsTo.user': 1 }
     ];
 
-    await this.createIndexes(UserReporting, indexes, 'UserReporting');
+      await this.createIndexes(UserReporting, indexes, 'UserReporting');
+    } catch (error) {
+      console.error('❌ Error optimizing UserReporting indexes:', error.message);
+      // Don't re-throw, continue with other optimizations
+    }
   }
 
   /**
