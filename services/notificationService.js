@@ -639,6 +639,90 @@ class NotificationService {
   }
 
   /**
+   * Send lead reminder notification
+   * @param {Object} reminder - Reminder object with relatedType 'lead'
+   */
+  async sendLeadReminderNotification(reminder) {
+    try {
+      const userId = reminder.userId?._id ? reminder.userId._id.toString() : reminder.userId.toString();
+
+      const notification = {
+        type: 'lead_reminder',
+        title: reminder.title || 'Lead Follow-up Reminder',
+        message: reminder.description || 'You have a lead follow-up scheduled',
+        data: {
+          reminderId: reminder._id,
+          leadId: reminder.relatedId,
+          reminderDate: reminder.dateTime,
+          relatedType: reminder.relatedType
+        },
+        priority: 'high'
+      };
+
+      // Send to user and superadmins
+      const superadminNotif = {
+        ...notification,
+        title: '[Admin] Lead Reminder',
+        message: `Lead reminder for user ${userId}: ${reminder.description || 'Lead follow-up scheduled'}`
+      };
+
+      await this.sendNotificationWithSuperadmin(userId, notification, superadminNotif);
+
+      // Send WebSocket notification
+      if (this.socketManager) {
+        this.socketManager.sendReminder(userId, notification);
+      }
+
+      console.log(`✅ Sent lead reminder notification for reminder ${reminder._id}`);
+
+    } catch (error) {
+      console.error('Error sending lead reminder notification:', error);
+    }
+  }
+
+  /**
+   * Send task reminder notification
+   * @param {Object} reminder - Reminder object with relatedType 'task'
+   */
+  async sendTaskReminderNotification(reminder) {
+    try {
+      const userId = reminder.userId?._id ? reminder.userId._id.toString() : reminder.userId.toString();
+
+      const notification = {
+        type: 'task_reminder',
+        title: reminder.title || 'Task Reminder',
+        message: reminder.description || 'You have a task reminder',
+        data: {
+          reminderId: reminder._id,
+          taskId: reminder.relatedId,
+          reminderDate: reminder.dateTime,
+          relatedType: reminder.relatedType
+        },
+        priority: 'high'
+      };
+
+      // Send to user and superadmins
+      const superadminNotif = {
+        ...notification,
+        title: '[Admin] Task Reminder',
+        message: `Task reminder for user ${userId}: ${reminder.description || 'Task reminder'}`
+      };
+
+      await this.sendNotificationWithSuperadmin(userId, notification, superadminNotif);
+
+      // Send WebSocket notification
+      if (this.socketManager) {
+        this.socketManager.sendReminder(userId, notification);
+      }
+
+      console.log(`✅ Sent task reminder notification for reminder ${reminder._id}`);
+
+    } catch (error) {
+      console.error('Error sending task reminder notification:', error);
+    }
+  }
+
+  /**
    * Send user activity notification to their hierarchy
    * This ensures superadmins and upper-level users are notified of all activities
    * @param {String} userId - User who performed the activity

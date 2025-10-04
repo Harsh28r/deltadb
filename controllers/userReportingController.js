@@ -64,10 +64,53 @@ const createOrUpdateReportingByUserId = async (req, res) => {
       }))) : [];
       reporting.level = user.level;
       await reporting.save();
-      
-      return res.json({ 
+
+      // Send notification about reporting relationship update
+      if (global.notificationService) {
+        try {
+          const updatedByUser = await User.findById(req.user._id).select('name email').lean();
+          const updatedByName = updatedByUser ? updatedByUser.name : 'System';
+          const targetUser = await User.findById(userId).select('name email').lean();
+
+          // Notify the user whose reporting was updated
+          await global.notificationService.sendNotification(userId, {
+            type: 'reporting_updated',
+            title: 'Reporting Structure Updated',
+            message: `Your reporting structure has been updated by ${updatedByName}`,
+            data: {
+              userId: userId,
+              userName: targetUser?.name,
+              updatedBy: req.user._id,
+              updatedByName: updatedByName,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+
+          // Notify superadmins about the reporting change
+          await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'user_reporting_updated',
+            title: '[Admin Activity] User Reporting Updated',
+            message: `User "${targetUser?.name || userId}" reporting structure updated by ${updatedByName}`,
+            data: {
+              targetUserId: userId,
+              targetUserName: targetUser?.name,
+              targetUserEmail: targetUser?.email,
+              updatedBy: req.user._id,
+              updatedByName: updatedByName,
+              updatedByEmail: updatedByUser?.email,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+        } catch (notificationError) {
+          console.error('Failed to send reporting update notification:', notificationError);
+        }
+      }
+
+      return res.json({
         message: 'Reporting relationship updated successfully',
-        reporting 
+        reporting
       });
     } else {
       // Create new
@@ -83,10 +126,53 @@ const createOrUpdateReportingByUserId = async (req, res) => {
         level: user.level
       });
       await reporting.save();
-      
-      return res.status(201).json({ 
+
+      // Send notification about new reporting relationship
+      if (global.notificationService) {
+        try {
+          const createdByUser = await User.findById(req.user._id).select('name email').lean();
+          const createdByName = createdByUser ? createdByUser.name : 'System';
+          const targetUser = await User.findById(userId).select('name email').lean();
+
+          // Notify the user who got new reporting structure
+          await global.notificationService.sendNotification(userId, {
+            type: 'reporting_assigned',
+            title: 'Reporting Structure Assigned',
+            message: `You have been assigned a new reporting structure by ${createdByName}`,
+            data: {
+              userId: userId,
+              userName: targetUser?.name,
+              assignedBy: req.user._id,
+              assignedByName: createdByName,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+
+          // Notify superadmins about the new reporting assignment
+          await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'user_reporting_assigned',
+            title: '[Admin Activity] User Reporting Assigned',
+            message: `User "${targetUser?.name || userId}" assigned new reporting structure by ${createdByName}`,
+            data: {
+              targetUserId: userId,
+              targetUserName: targetUser?.name,
+              targetUserEmail: targetUser?.email,
+              assignedBy: req.user._id,
+              assignedByName: createdByName,
+              assignedByEmail: createdByUser?.email,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+        } catch (notificationError) {
+          console.error('Failed to send reporting assignment notification:', notificationError);
+        }
+      }
+
+      return res.status(201).json({
         message: 'Reporting relationship created successfully',
-        reporting 
+        reporting
       });
     }
   } catch (err) {
@@ -123,9 +209,52 @@ const createReporting = async (req, res) => {
       }))) : [];
       reporting.level = user.level; // Update level in case it changed
       await reporting.save();
-      return res.status(200).json({ 
+
+      // Send notification about reporting relationship update
+      if (global.notificationService) {
+        try {
+          const updatedByUser = await User.findById(req.user._id).select('name email').lean();
+          const updatedByName = updatedByUser ? updatedByUser.name : 'System';
+
+          // Notify the user whose reporting was updated
+          await global.notificationService.sendNotification(req.body.userId, {
+            type: 'reporting_updated',
+            title: 'Reporting Structure Updated',
+            message: `Your reporting structure has been updated by ${updatedByName}`,
+            data: {
+              userId: req.body.userId,
+              userName: user.name,
+              updatedBy: req.user._id,
+              updatedByName: updatedByName,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+
+          // Notify superadmins about the reporting change
+          await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'user_reporting_updated',
+            title: '[Admin Activity] User Reporting Updated',
+            message: `User "${user.name}" reporting structure updated by ${updatedByName}`,
+            data: {
+              targetUserId: req.body.userId,
+              targetUserName: user.name,
+              targetUserEmail: user.email,
+              updatedBy: req.user._id,
+              updatedByName: updatedByName,
+              updatedByEmail: updatedByUser?.email,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+        } catch (notificationError) {
+          console.error('Failed to send reporting update notification:', notificationError);
+        }
+      }
+
+      return res.status(200).json({
         message: 'Reporting relationship updated successfully',
-        reporting 
+        reporting
       });
     } else {
       // Create new reporting relationship
@@ -141,9 +270,52 @@ const createReporting = async (req, res) => {
         level: user.level
       });
       await reporting.save();
-      return res.status(201).json({ 
+
+      // Send notification about new reporting relationship
+      if (global.notificationService) {
+        try {
+          const createdByUser = await User.findById(req.user._id).select('name email').lean();
+          const createdByName = createdByUser ? createdByUser.name : 'System';
+
+          // Notify the user who got new reporting structure
+          await global.notificationService.sendNotification(req.body.userId, {
+            type: 'reporting_assigned',
+            title: 'Reporting Structure Assigned',
+            message: `You have been assigned a new reporting structure by ${createdByName}`,
+            data: {
+              userId: req.body.userId,
+              userName: user.name,
+              assignedBy: req.user._id,
+              assignedByName: createdByName,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+
+          // Notify superadmins about the new reporting assignment
+          await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'user_reporting_assigned',
+            title: '[Admin Activity] User Reporting Assigned',
+            message: `User "${user.name}" assigned new reporting structure by ${createdByName}`,
+            data: {
+              targetUserId: req.body.userId,
+              targetUserName: user.name,
+              targetUserEmail: user.email,
+              assignedBy: req.user._id,
+              assignedByName: createdByName,
+              assignedByEmail: createdByUser?.email,
+              reportsToCount: reporting.reportsTo.length
+            },
+            priority: 'normal'
+          });
+        } catch (notificationError) {
+          console.error('Failed to send reporting assignment notification:', notificationError);
+        }
+      }
+
+      return res.status(201).json({
         message: 'Reporting relationship created successfully',
-        reporting 
+        reporting
       });
     }
   } catch (err) {
@@ -256,10 +428,52 @@ const updateReporting = async (req, res) => {
     }))) : [];
     reporting.level = user.level; // Update level in case it changed
     await reporting.save();
-    
-    res.json({ 
+
+    // Send notification about reporting relationship update
+    if (global.notificationService) {
+      try {
+        const updatedByUser = await User.findById(req.user._id).select('name email').lean();
+        const updatedByName = updatedByUser ? updatedByUser.name : 'System';
+
+        // Notify the user whose reporting was updated
+        await global.notificationService.sendNotification(reporting.user.toString(), {
+          type: 'reporting_updated',
+          title: 'Reporting Structure Updated',
+          message: `Your reporting structure has been updated by ${updatedByName}`,
+          data: {
+            userId: reporting.user,
+            userName: user.name,
+            updatedBy: req.user._id,
+            updatedByName: updatedByName,
+            reportsToCount: reporting.reportsTo.length
+          },
+          priority: 'normal'
+        });
+
+        // Notify superadmins about the reporting change
+        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'user_reporting_updated',
+          title: '[Admin Activity] User Reporting Updated',
+          message: `User "${user.name}" reporting structure updated by ${updatedByName}`,
+          data: {
+            targetUserId: reporting.user,
+            targetUserName: user.name,
+            targetUserEmail: user.email,
+            updatedBy: req.user._id,
+            updatedByName: updatedByName,
+            updatedByEmail: updatedByUser?.email,
+            reportsToCount: reporting.reportsTo.length
+          },
+          priority: 'normal'
+        });
+      } catch (notificationError) {
+        console.error('Failed to send reporting update notification:', notificationError);
+      }
+    }
+
+    res.json({
       message: 'Reporting relationship updated successfully',
-      reporting 
+      reporting
     });
   } catch (err) {
     if (err.code === 11000) {

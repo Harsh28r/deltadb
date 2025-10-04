@@ -162,13 +162,14 @@ class ReminderService {
 
       // Find reminders that are due (within the last minute to account for processing time)
       const dueReminders = await Reminder.find({
-        reminderDate: { $lte: now },
-        isActive: true,
-        isCompleted: false,
-        isSent: { $ne: true }
+        dateTime: { $lte: now },
+        status: 'pending'
       })
-      .populate('user', 'email name')
-      .populate('task', 'title dueDate priority')
+      .populate('userId', 'email name')
+      .populate({
+        path: 'relatedId',
+        select: 'title dueDate priority currentStatus customData'
+      })
       .lean();
 
       console.log(`📅 Processing ${dueReminders.length} due reminders`);
@@ -181,25 +182,18 @@ class ReminderService {
           await Reminder.updateOne(
             { _id: reminder._id },
             {
-              isSent: true,
-              sentAt: now,
-              $inc: { notificationCount: 1 }
+              status: 'sent',
+              updatedAt: now
             }
           );
 
-          console.log(`✅ Sent reminder ${reminder._id} to user ${reminder.user.email}`);
+          console.log(`✅ Sent reminder ${reminder._id} to user ${reminder.userId?.email || 'unknown'}`);
 
         } catch (error) {
           console.error(`❌ Error sending reminder ${reminder._id}:`, error);
 
-          // Mark as failed
-          await Reminder.updateOne(
-            { _id: reminder._id },
-            {
-              lastError: error.message,
-              $inc: { failureCount: 1 }
-            }
-          );
+          // Keep as pending if failed (will retry next time)
+          console.error(`Reminder ${reminder._id} will be retried`);
         }
       }
 
@@ -221,7 +215,14 @@ class ReminderService {
     }
 
     try {
-      await this.notificationService.sendReminderNotification(reminder);
+      // Different notification based on reminder type
+      if (reminder.relatedType === 'lead') {
+        await this.notificationService.sendLeadReminderNotification(reminder);
+      } else if (reminder.relatedType === 'task') {
+        await this.notificationService.sendTaskReminderNotification(reminder);
+      } else {
+        await this.notificationService.sendReminderNotification(reminder);
+      }
     } catch (error) {
       console.error('Error sending reminder notification:', error);
       throw error;
