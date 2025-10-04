@@ -155,6 +155,40 @@ const createCPSourcing = async (req, res) => {
       await cpSourcing.save();
     }
 
+    // Send notification to superadmins about new sourcing activity
+    if (global.notificationService) {
+      try {
+        const userInfo = await User.findById(req.user._id).select('name email').lean();
+        const userName = userInfo ? userInfo.name : 'Unknown User';
+        const channelPartnerInfo = await ChannelPartner.findById(channelPartner._id).select('name firmName').lean();
+        const projectInfo = await Project.findById(req.body.projectId).select('name location').lean();
+
+        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'cp_sourcing_created',
+          title: '[Team Activity] New Sourcing Activity',
+          message: `${userName} created new sourcing activity for ${channelPartnerInfo?.firmName || 'channel partner'} at project ${projectInfo?.name || 'unknown project'}`,
+          data: {
+            cpSourcingId: cpSourcing._id,
+            userId: req.user._id,
+            userName: userName,
+            userEmail: userInfo?.email,
+            channelPartnerId: channelPartner._id,
+            channelPartnerName: channelPartnerInfo?.name,
+            channelPartnerFirm: channelPartnerInfo?.firmName,
+            projectId: req.body.projectId,
+            projectName: projectInfo?.name,
+            projectLocation: projectInfo?.location,
+            location: req.body.location,
+            notes: req.body.notes
+          },
+          priority: 'normal'
+        });
+      } catch (notificationError) {
+        console.error('Failed to send sourcing notification:', notificationError);
+        // Don't fail the main operation if notification fails
+      }
+    }
+
     res.status(201).json(cpSourcing);
   } catch (err) {
     if (req.file) fs.unlinkSync(req.file.path);
@@ -351,6 +385,40 @@ const updateCPSourcing = async (req, res) => {
     cpSourcing.customData = req.body.customData || cpSourcing.customData;
     cpSourcing.updatedBy = req.user._id;
     await cpSourcing.save();
+
+    // Send notification to superadmins about sourcing update
+    if (global.notificationService) {
+      try {
+        const userInfo = await User.findById(req.user._id).select('name email').lean();
+        const userName = userInfo ? userInfo.name : 'Unknown User';
+        const channelPartnerInfo = await ChannelPartner.findById(cpSourcing.channelPartnerId).select('name firmName').lean();
+        const projectInfo = await Project.findById(cpSourcing.projectId).select('name location').lean();
+
+        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'cp_sourcing_updated',
+          title: '[Team Activity] Sourcing Activity Updated',
+          message: `${userName} updated sourcing activity for ${channelPartnerInfo?.firmName || 'channel partner'} at project ${projectInfo?.name || 'unknown project'}`,
+          data: {
+            cpSourcingId: cpSourcing._id,
+            userId: req.user._id,
+            userName: userName,
+            userEmail: userInfo?.email,
+            channelPartnerId: cpSourcing.channelPartnerId,
+            channelPartnerName: channelPartnerInfo?.name,
+            channelPartnerFirm: channelPartnerInfo?.firmName,
+            projectId: cpSourcing.projectId,
+            projectName: projectInfo?.name,
+            projectLocation: projectInfo?.location,
+            location: req.body.location,
+            notes: req.body.notes
+          },
+          priority: 'normal'
+        });
+      } catch (notificationError) {
+        console.error('Failed to send sourcing update notification:', notificationError);
+        // Don't fail the main operation if notification fails
+      }
+    }
 
     res.json(cpSourcing);
   } catch (err) {

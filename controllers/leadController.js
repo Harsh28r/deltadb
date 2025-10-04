@@ -43,9 +43,13 @@ const editLeadSchema = Joi.object({
 });
 
 const changeStatusSchema = Joi.object({
-  newStatus: Joi.string().hex().length(24).required(),
-  newData: Joi.object().optional()
-});
+  newStatus: Joi.string().hex().length(24).optional(),
+  newStatusId: Joi.string().hex().length(24).optional(),
+  statusId: Joi.string().hex().length(24).optional(),
+  currentStatus: Joi.string().hex().length(24).optional(),
+  newData: Joi.object().optional(),
+  customData: Joi.object().optional()
+}).or('newStatus', 'newStatusId', 'statusId', 'currentStatus');
 
 const bulkTransferLeadsSchema = Joi.object({
   fromUser: Joi.string().hex().length(24).required(),
@@ -234,14 +238,14 @@ const getLeads = async (req, res) => {
     const { userId, projectId, statusId, page, limit } = value;
 
     // Create cache key for this query
-    const cacheKey = `leads:${req.user._id}:${JSON.stringify(value)}`;
+    // const cacheKey = `leads:${req.user._id}:${JSON.stringify(value)}`;
 
     // Check cache first
-    const cachedResults = await cacheManager.getQueryResult(cacheKey);
-    if (cachedResults) {
-      console.log('getLeads - Returning cached results');
-      return res.json(cachedResults);
-    }
+    // const cachedResults = await cacheManager.getQueryResult(cacheKey);
+    // if (cachedResults) {
+    //   console.log('getLeads - Returning cached results');
+    //   return res.json(cachedResults);
+    // }
 
     let query = {};
 
@@ -296,7 +300,14 @@ const getLeads = async (req, res) => {
       .populate('user', 'name email')
       .populate('project', 'name')
       .populate('channelPartner', 'name phone')
-      .populate('cpSourcingId', 'userId')
+      .populate({
+        path: 'cpSourcingId',
+        select: 'userId',
+        populate: {
+          path: 'userId',
+          select: 'name phone'
+        }
+      })
       .populate('leadSource', 'name')
       .populate('currentStatus', 'name formFields is_final_status')
       .sort({ createdAt: -1 })
@@ -317,7 +328,7 @@ const getLeads = async (req, res) => {
     };
 
     // Cache the results for 5 minutes
-    await cacheManager.setQueryResult(cacheKey, results, 10);
+    // await cacheManager.setQueryResult(cacheKey, results, 10);
 
     res.json(results);
   } catch (err) {
@@ -492,7 +503,13 @@ const changeLeadStatus = async (req, res) => {
     const lead = await Lead.findById(id);
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
-    await lead.changeStatus(req.body.newStatus, req.body.newData || {}, req.user._id);
+    // Support multiple field names for status
+    const newStatusId = req.body.newStatus || req.body.newStatusId || req.body.statusId || req.body.currentStatus;
+
+    // Support multiple field names for custom data
+    const customData = req.body.newData || req.body.customData || {};
+
+    await lead.changeStatus(newStatusId, customData, req.user);
 
     res.json(lead);
   } catch (err) {

@@ -982,6 +982,27 @@ const createUserWithRole = async (req, res) => {
         },
         priority: 'high'
       });
+
+      // Send notification to superadmins about new user assignment
+      const createdByUser = await User.findById(req.user._id).select('name email').lean();
+      const createdByName = createdByUser ? createdByUser.name : 'System';
+
+      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+        type: 'user_assigned',
+        title: '[Admin Activity] New User Assigned',
+        message: `New user "${user.name}" assigned to role "${role.name}" (Level ${user.level}) by ${createdByName}`,
+        data: {
+          newUserId: user._id,
+          newUserName: user.name,
+          newUserEmail: user.email,
+          assignedRole: role.name,
+          assignedLevel: user.level,
+          assignedBy: req.user._id,
+          assignedByName: createdByName,
+          assignedByEmail: createdByUser?.email
+        },
+        priority: 'normal'
+      });
     }
 
     res.status(201).json({
@@ -1114,6 +1135,27 @@ const editUserWithRole = async (req, res) => {
           newLevel: user.level
         },
         priority: 'high'
+      });
+
+      // Send notification to superadmins about role change
+      const updatedByUser = await User.findById(req.user._id).select('name email').lean();
+      const updatedByName = updatedByUser ? updatedByUser.name : 'System';
+
+      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+        type: 'user_role_changed',
+        title: '[Admin Activity] User Role Changed',
+        message: `User "${user.name}" role changed to "${user.role}" (Level ${user.level}) by ${updatedByName}`,
+        data: {
+          targetUserId: user._id,
+          targetUserName: user.name,
+          targetUserEmail: user.email,
+          newRole: user.role,
+          newLevel: user.level,
+          updatedBy: req.user._id,
+          updatedByName: updatedByName,
+          updatedByEmail: updatedByUser?.email
+        },
+        priority: 'normal'
       });
     }
 

@@ -75,7 +75,9 @@ const imageRoutes = require('./routes/images'); // Adjust path
 const dashBoardRoutes = require('./routes/dashBoardRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const reminderRoutes = require('./routes/reminderRoutes');
+const followUpRoutes = require('./routes/followUpRoutes');
 const testNotificationRoutes = require('./routes/testNotificationRoutes');
+const testReminderRoutes = require('./routes/testReminderRoutes');
 // const { smartRateLimiter } = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 const { globalErrorHandler } = require('./middleware/errorHandler');
@@ -235,7 +237,9 @@ app.use('/', imageRoutes);
 app.use('/api/dashboard', dashBoardRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reminder', reminderRoutes);
+app.use('/api/follow-ups', followUpRoutes);
 app.use('/api/test', testNotificationRoutes);
+app.use('/api/test-reminder', testReminderRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
