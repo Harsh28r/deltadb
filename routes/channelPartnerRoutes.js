@@ -12,6 +12,7 @@ const {
   bulkCreateChannelPartners,
   bulkUpdateChannelPartners,
   bulkDeleteChannelPartners,
+  bulkUploadChannelPartners,
   serveChannelPartnerPhoto
 } = require('../controllers/channelPartnerController');
 
@@ -24,6 +25,7 @@ router.get('/:id/photo', auth, checkPermission('channel-partner:read'), serveCha
 router.put('/:id', auth, checkPermission('channel-partner:update'), updateChannelPartner);
 router.delete('/:id', auth, checkPermission('channel-partner:delete'), superadmin, deleteChannelPartner);
 router.post('/bulk-create', auth, checkPermission('channel-partner:bulk-create'), superadmin, bulkCreateChannelPartners);
+router.post('/bulk-upload', auth, checkPermission('channel-partner:bulk-create'), superadmin, bulkUploadChannelPartners);
 router.post('/bulk-update', auth, checkPermission('channel-partner:bulk-update'), superadmin, bulkUpdateChannelPartners);
 router.post('/bulk-delete', auth, checkPermission('channel-partner:bulk-delete'), superadmin, bulkDeleteChannelPartners);
 

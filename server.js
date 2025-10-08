@@ -96,6 +96,9 @@ const SocketManager = require('./websocket/socketManager');
 const NotificationService = require('./services/notificationService');
 const ReminderService = require('./services/reminderService');
 
+// Import Redis cache
+const redisCache = require('./utils/redisCache');
+
 // Initialize WebSocket system
 let socketManager, notificationService, reminderService;
 
@@ -172,9 +175,13 @@ const connectToMongoDB = async () => {
       retryWrites: true,
       w: 'majority'
     });
-    
+
     console.log('MongoDB connected successfully');
     isMongoConnected = true;
+
+    // Initialize Redis cache
+    await redisCache.connect();
+
     startServer();
   } catch (err) {
     console.error('MongoDB connection error:', err.message);

@@ -1,5 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
+const RedisStore = require('rate-limit-redis').default;
+const redisCache = require('../utils/redisCache');
 
 // Create different rate limiters for different endpoints
 const rateLimiters = {
@@ -14,11 +15,11 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // Use MongoDB store for distributed rate limiting
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'rate_limits',
-      expireTimeMs: 15 * 60 * 1000
+    // Use Redis store for distributed rate limiting
+    store: new RedisStore({
+      // @ts-expect-error - Known issue: the call function is not present in @types/ioredis
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:general:'
     }),
     keyGenerator: (req) => {
       // Use user ID if authenticated, otherwise use proper IP handling
@@ -48,10 +49,9 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'auth_rate_limits',
-      expireTimeMs: 15 * 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:auth:'
     }),
     skipSuccessfulRequests: true // Don't count successful logins
   }),
@@ -67,10 +67,9 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'admin_rate_limits',
-      expireTimeMs: 5 * 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:admin:'
     })
   }),
 
@@ -85,17 +84,16 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'upload_rate_limits',
-      expireTimeMs: 10 * 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:upload:'
     })
   }),
 
   // Lead creation/updates (business critical)
   leads: rateLimit({
     windowMs: 1 * 1000, // 1 second
-   // 1 lead operation per second
+    max: 100, // 100 lead operations per second
     message: {
       error: 'Lead operation rate limit exceeded',
       message: 'Too many lead operations. Please slow down.',
@@ -103,10 +101,9 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'lead_rate_limits',
-      expireTimeMs: 1 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:leads:'
     })
   }),
 
@@ -121,10 +118,9 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'search_rate_limits',
-      expireTimeMs: 1 * 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:search:'
     })
   }),
 
@@ -139,10 +135,9 @@ const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: 'websocket_rate_limits',
-      expireTimeMs: 1 * 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: 'rl:websocket:'
     })
   })
 };
@@ -174,10 +169,9 @@ const createDynamicRateLimit = (options = {}) => {
     }),
     standardHeaders: true,
     legacyHeaders: false,
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: options.collection || 'dynamic_rate_limits',
-      expireTimeMs: options.windowMs || 15 * 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: options.prefix || 'rl:dynamic:'
     }),
     keyGenerator: (req) => {
       if (req.user?.id) {
@@ -214,10 +208,9 @@ const createBurstProtectionLimit = (options = {}) => {
     standardHeaders: true,
     legacyHeaders: false,
 
-    store: new MongoStore({
-      uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-      collectionName: options.collection || 'burst_rate_limits',
-      expireTimeMs: options.windowMs || 60 * 1000
+    store: new RedisStore({
+      sendCommand: (...args) => redisCache.client?.call(...args),
+      prefix: options.prefix || 'rl:burst:'
     })
   });
 };
@@ -239,10 +232,9 @@ const expensiveOperationLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  store: new MongoStore({
-    uri: process.env.MONGO_URI || 'mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/',
-    collectionName: 'expensive_operation_limits',
-    expireTimeMs: 60 * 60 * 1000
+  store: new RedisStore({
+    sendCommand: (...args) => redisCache.client?.call(...args),
+    prefix: 'rl:expensive:'
   })
 });
 

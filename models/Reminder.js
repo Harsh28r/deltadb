@@ -5,7 +5,12 @@ const reminderSchema = new mongoose.Schema({
   description: { type: String, trim: true },
   dateTime: { type: Date, required: true },
   relatedType: { type: String, enum: ['task', 'lead', 'project', 'cp-sourcing'], required: true },
-  relatedId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  relatedId: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'relatedModel' },
+  relatedModel: {
+    type: String,
+    enum: ['Task', 'Lead', 'Project', 'CPSourcing'],
+    required: true
+  },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   status: { type: String, enum: ['pending', 'sent', 'dismissed'], default: 'pending' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -17,9 +22,23 @@ reminderSchema.index({ userId: 1, dateTime: 1 });
 reminderSchema.index({ relatedType: 1, relatedId: 1 });
 reminderSchema.index({ status: 1, createdAt: -1 });
 
-// Update timestamp on save
+// Map relatedType to model name
+const relatedTypeToModel = {
+  'task': 'Task',
+  'lead': 'Lead',
+  'project': 'Project',
+  'cp-sourcing': 'CPSourcing'
+};
+
+// Update timestamp and set relatedModel on save
 reminderSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
+
+  // Automatically set relatedModel based on relatedType
+  if (this.relatedType && !this.relatedModel) {
+    this.relatedModel = relatedTypeToModel[this.relatedType];
+  }
+
   next();
 });
 

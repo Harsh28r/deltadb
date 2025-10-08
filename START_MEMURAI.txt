@@ -1,0 +1,83 @@
+===============================================
+  START MEMURAI (REDIS) - QUICK GUIDE
+===============================================
+
+You have downloaded Memurai but it's NOT running yet.
+
+STEP 1: Install Memurai
+---------------------------------------
+If you haven't installed it yet:
+1. Find the Memurai installer file you downloaded
+2. Double-click to run it
+3. Follow the installation wizard
+4. Click "Finish"
+
+STEP 2: Start Memurai Service
+---------------------------------------
+Option A - Using Windows Services:
+1. Press Windows + R
+2. Type: services.msc
+3. Press Enter
+4. Find "Memurai" in the list
+5. Right-click → Start
+
+Option B - Using Command Prompt (Administrator):
+1. Right-click Command Prompt → Run as Administrator
+2. Type: net start Memurai
+3. Press Enter
+
+Option C - Using PowerShell (Administrator):
+1. Right-click PowerShell → Run as Administrator
+2. Type: Start-Service Memurai
+3. Press Enter
+
+STEP 3: Verify Memurai is Running
+---------------------------------------
+In Command Prompt or PowerShell, run:
+
+  memurai-cli ping
+
+You should see: PONG
+
+STEP 4: Restart Your Application
+---------------------------------------
+1. Stop your current Node.js application (Ctrl+C)
+2. Run: npm start
+3. You should see: ✅ Redis connected successfully
+
+===============================================
+  QUICK TEST COMMANDS
+===============================================
+
+Test if Memurai is installed:
+  memurai-cli --version
+
+Test if Memurai is running:
+  memurai-cli ping
+
+Check Memurai service status:
+  sc query Memurai
+
+Start Memurai:
+  net start Memurai
+
+Stop Memurai:
+  net stop Memurai
+
+===============================================
+  TROUBLESHOOTING
+===============================================
+
+Problem: "memurai-cli not found"
+Solution: Memurai is not installed. Install it first.
+
+Problem: "service could not be started"
+Solution: Run Command Prompt/PowerShell as Administrator
+
+Problem: Still getting connection refused
+Solution:
+1. Check if Memurai is running: sc query Memurai
+2. Check port 6379: netstat -an | findstr 6379
+3. Restart Memurai: net stop Memurai && net start Memurai
+
+===============================================

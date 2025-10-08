@@ -8,6 +8,12 @@ const LeadActivity = require('../models/LeadActivity');
 const UserReporting = require('../models/UserReporting');
 const LeadService = require('../services/leadService');
 const cacheManager = require('../utils/cacheManager');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const XLSX = require('xlsx');
+const csv = require('csv-parser');
 
 // Initialize lead service (leadService is exported as instance)
 const leadService = LeadService;
@@ -223,6 +229,21 @@ const createLead = async (req, res) => {
       }
     }
 
+    // Broadcast lead creation to WebSocket clients for real-time updates
+    if (global.socketManager) {
+      // Notify project members
+      global.socketManager.broadcastToProject(resolvedProjectId, 'lead-created', {
+        lead: lead.toObject(),
+        createdBy: req.user._id
+      });
+
+      // Notify the assigned user
+      global.socketManager.io.to(`user:${req.body.userId}`).emit('lead-assigned', {
+        lead: lead.toObject(),
+        assignedBy: req.user._id
+      });
+    }
+
     res.status(201).json(lead);
   } catch (err) {
     console.error('createLead - Error:', err.message);
@@ -295,6 +316,7 @@ const getLeads = async (req, res) => {
 
     const totalItems = await Lead.countDocuments(query);
     const totalPages = Math.ceil(totalItems / limit);
+    
     const leads = await Lead.find(query)
       .select('user project channelPartner cpSourcingId leadSource currentStatus customData createdAt ')
       .populate('user', 'name email')
@@ -302,6 +324,8 @@ const getLeads = async (req, res) => {
       .populate('channelPartner', 'name phone')
       .populate({
         path: 'cpSourcingId',
+
+
         select: 'userId',
         populate: {
           path: 'userId',
@@ -451,6 +475,20 @@ const editLead = async (req, res) => {
       });
     }
 
+    // Broadcast lead update to WebSocket clients for real-time updates
+    if (global.socketManager) {
+      global.socketManager.broadcastToProject(lead.project, 'lead-updated', {
+        lead: lead.toObject(),
+        updatedBy: req.user._id
+      });
+
+      // Notify lead owner
+      global.socketManager.io.to(`user:${lead.user}`).emit('lead-updated', {
+        lead: lead.toObject(),
+        updatedBy: req.user._id
+      });
+    }
+
     res.json(lead);
   } catch (err) {
     console.error('editLead - Error:', err.message);
@@ -487,6 +525,20 @@ const deleteLead = async (req, res) => {
       });
     }
 
+    // Broadcast lead deletion to WebSocket clients for real-time updates
+    if (global.socketManager) {
+      global.socketManager.broadcastToProject(lead.project, 'lead-deleted', {
+        leadId: lead._id,
+        deletedBy: req.user._id
+      });
+
+      // Notify lead owner
+      global.socketManager.io.to(`user:${lead.user}`).emit('lead-deleted', {
+        leadId: lead._id,
+        deletedBy: req.user._id
+      });
+    }
+
     res.json({ message: 'Lead deleted' });
   } catch (err) {
     console.error('deleteLead - Error:', err.message);
@@ -510,6 +562,20 @@ const changeLeadStatus = async (req, res) => {
     const customData = req.body.newData || req.body.customData || {};
 
     await lead.changeStatus(newStatusId, customData, req.user);
+
+    // Broadcast lead status change to WebSocket clients for real-time updates
+    if (global.socketManager) {
+      global.socketManager.broadcastToProject(lead.project, 'lead-status-changed', {
+        lead: lead.toObject(),
+        changedBy: req.user._id
+      });
+
+      // Notify lead owner
+      global.socketManager.io.to(`user:${lead.user}`).emit('lead-status-changed', {
+        lead: lead.toObject(),
+        changedBy: req.user._id
+      });
+    }
 
     res.json(lead);
   } catch (err) {
@@ -634,48 +700,546 @@ const bulkTransferLeads = async (req, res) => {
   }
 };
 
+// Multer configuration for bulk upload files (CSV/Excel)
+const bulkUploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/bulk';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const secureFilename = crypto.randomUUID() + fileExtension;
+    cb(null, secureFilename);
+  }
+});
+
+const bulkUpload = multer({
+  storage: bulkUploadStorage,
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = ['.csv', '.xls', '.xlsx'];
+
+    if (!allowedMimeTypes.includes(file.mimetype) && !allowedExtensions.includes(fileExtension)) {
+      return cb(new Error('Invalid file type. Only CSV and Excel files are allowed'), false);
+    }
+
+    if (file.originalname.includes('..') || file.originalname.includes('/') || file.originalname.includes('\\')) {
+      return cb(new Error('Invalid filename'), false);
+    }
+
+    cb(null, true);
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+    files: 1
+  }
+});
+
+// Parse CSV/Excel file
+const parseUploadedFile = async (filePath) => {
+  const fileExtension = path.extname(filePath).toLowerCase();
+  let data = [];
+
+  if (fileExtension === '.csv') {
+    return new Promise((resolve, reject) => {
+      const results = [];
+      fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('data', (row) => {
+          results.push(row);
+        })
+        .on('end', () => {
+          resolve(results);
+        })
+        .on('error', (error) => {
+          reject(error);
+        });
+    });
+  } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    data = XLSX.utils.sheet_to_json(worksheet);
+    return data;
+  } else {
+    throw new Error('Unsupported file format');
+  }
+};
+
+// Validation schema for lead bulk upload
+const leadBulkUploadSchema = Joi.object({
+  userId: Joi.string().hex().length(24).optional().allow(''),
+  projectId: Joi.string().hex().length(24).optional().allow(''),
+  projectName: Joi.string().optional().allow(''),
+  channelPartnerId: Joi.string().hex().length(24).optional().allow(''),
+  leadSourceId: Joi.string().hex().length(24).optional().allow(''),
+  leadSourceName: Joi.string().optional().allow(''),
+  cpSourcingId: Joi.string().hex().length(24).optional().allow(''),
+  name: Joi.string().required().min(1).messages({
+    'string.empty': 'Lead name is required (provide either "name" or "firstName" and "lastName")',
+    'any.required': 'Lead name is required (provide either "name" or "firstName" and "lastName")'
+  }),
+  phone: Joi.string().optional().allow(''),
+  email: Joi.string().optional().allow(''),
+  customData: Joi.object().optional()
+});
+
 const bulkUploadLeads = async (req, res) => {
-  const results = [];
+  if (!req.file) {
+    return res.status(400).json({ message: 'No file uploaded' });
+  }
+
+  const filePath = req.file.path;
+
   try {
-    const fs = require('fs');
-    const csv = require('csv-parser');
-    fs.createReadStream(req.file.path)
-      .pipe(csv())
-      .on('data', (data) => results.push(data))
-      .on('end', async () => {
+    // Parse the uploaded file
+    const rawData = await parseUploadedFile(filePath);
+
+    if (!rawData || rawData.length === 0) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ message: 'File is empty or invalid' });
+    }
+
+    // Get default status
+    const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true }).lean();
+    if (!defaultStatus) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ message: 'No default lead status found' });
+    }
+
+    // Get default lead source (Channel Partner)
+    const defaultLeadSource = await mongoose.model('LeadSource')
+      .findOne({ name: 'Channel Partner' })
+      .collation({ locale: 'en', strength: 2 })
+      .lean();
+
+    if (!defaultLeadSource) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ message: 'Default lead source not found. Please initialize Lead Sources.' });
+    }
+
+    // Validate and transform data
+    const validLeads = [];
+    const errors = [];
+
+    for (let i = 0; i < rawData.length; i++) {
+      const row = rawData[i];
+      const rowNumber = i + 2;
+
+      // Map CSV/Excel columns to lead schema
+      let rawProjectId = row.projectId || row.ProjectId || row.project || row.Project || '';
+      let rawProjectName = row.projectName || row.ProjectName || row['Project Name'] || '';
+      let rawLeadSourceId = row.leadSourceId || row.LeadSourceId || row.leadSource || row.LeadSource || '';
+      let rawLeadSourceName = row.leadSourceName || row.LeadSourceName || row['Lead Source'] || '';
+
+      // Smart detection: if projectId doesn't look like a hex ID, treat it as projectName
+      if (rawProjectId && !/^[0-9a-fA-F]{24}$/.test(rawProjectId)) {
+        rawProjectName = rawProjectId;
+        rawProjectId = '';
+      }
+
+      // Smart detection: if leadSourceId doesn't look like a hex ID, treat it as leadSourceName
+      if (rawLeadSourceId && !/^[0-9a-fA-F]{24}$/.test(rawLeadSourceId)) {
+        rawLeadSourceName = rawLeadSourceId;
+        rawLeadSourceId = '';
+      }
+
+      // Extract first and last name
+      const firstName = row.firstName || row.FirstName || row['First Name'] || '';
+      const lastName = row.lastName || row.LastName || row['Last Name'] || '';
+
+      // Combine firstName and lastName to create name
+      let leadName = row.name || row.Name || '';
+      if (!leadName && (firstName || lastName)) {
+        leadName = `${firstName} ${lastName}`.trim();
+      }
+
+      const leadData = {
+        userId: row.userId || row.UserId || row.user || row.User || '',
+        projectId: rawProjectId,
+        projectName: rawProjectName,
+        channelPartnerId: row.channelPartnerId || row.ChannelPartnerId || row.channelPartner || row.ChannelPartner || '',
+        leadSourceId: rawLeadSourceId,
+        leadSourceName: rawLeadSourceName,
+        cpSourcingId: row.cpSourcingId || row.CpSourcingId || row.CPSourcingId || '',
+        // Lead-specific fields
+        name: leadName,
+        phone: row.phone || row.Phone || '',
+        email: row.email || row.Email || '',
+        customData: {}
+      };
+
+      // Build customData from lead-specific fields and any additional customData
+      const customDataFields = {};
+      if (leadData.name) customDataFields.name = leadData.name;
+      if (leadData.phone) customDataFields.phone = leadData.phone;
+      if (leadData.email) customDataFields.email = leadData.email;
+
+      // Parse customData if present and merge with lead fields
+      if (row.customData || row.CustomData) {
         try {
-          const defaultStatus = await mongoose.model('LeadStatus').findOne({ is_default_status: true }).lean();
-          if (!defaultStatus) {
-            return res.status(400).json({ message: 'No default lead status found' });
-          }
-
-          const leads = await Lead.insertMany(
-            results.map(row => ({
-              user: row.userId,
-              project: row.projectId || undefined,
-              channelPartner: row.channelPartnerId || null,
-              leadSource: row.leadSourceId,
-              currentStatus: defaultStatus._id,
-              customData: row.customData ? JSON.parse(row.customData) : {},
-              createdBy: req.user._id,
-              updatedBy: req.user._id
-            })),
-            { context: { userId: req.user._id } }
-          );
-
-          for (const lead of leads) {
-            await logLeadActivity(lead._id, req.user._id, 'created', { data: lead.toObject() });
-          }
-
-          fs.unlinkSync(req.file.path);
-          res.json({ message: 'Bulk upload successful', count: leads.length });
-        } catch (err) {
-          console.error('bulkUploadLeads - Error:', err.message);
-          res.status(400).json({ message: err.message });
+          const parsedCustomData = typeof (row.customData || row.CustomData) === 'string'
+            ? JSON.parse(row.customData || row.CustomData)
+            : (row.customData || row.CustomData);
+          leadData.customData = { ...customDataFields, ...parsedCustomData };
+        } catch (e) {
+          errors.push({
+            row: rowNumber,
+            data: leadData,
+            error: 'Invalid customData JSON format'
+          });
+          continue;
         }
-      });
+      } else {
+        leadData.customData = customDataFields;
+      }
+
+      // Also check for any other columns not mapped and add them to customData
+      const mappedColumns = ['userId', 'UserId', 'user', 'User', 'projectId', 'ProjectId', 'project', 'Project',
+                             'projectName', 'ProjectName', 'Project Name', 'channelPartnerId', 'ChannelPartnerId',
+                             'channelPartner', 'ChannelPartner', 'leadSourceId', 'LeadSourceId', 'leadSource',
+                             'LeadSource', 'leadSourceName', 'LeadSourceName', 'Lead Source', 'cpSourcingId',
+                             'CpSourcingId', 'CPSourcingId', 'name', 'Name', 'phone', 'Phone', 'email', 'Email',
+                             'customData', 'CustomData'];
+
+      for (const key in row) {
+        if (!mappedColumns.includes(key) && row[key]) {
+          leadData.customData[key] = row[key];
+        }
+      }
+
+      // Validate the data
+      const { error } = leadBulkUploadSchema.validate(leadData);
+
+      if (error) {
+        errors.push({
+          row: rowNumber,
+          data: leadData,
+          error: error.details[0].message
+        });
+      } else {
+        // Additional validation for referenced IDs
+        try {
+          // Resolve userId - default to current user if not provided
+          let resolvedUserId = leadData.userId;
+          if (!resolvedUserId) {
+            resolvedUserId = req.user._id.toString();
+          } else {
+            const user = await mongoose.model('User').findById(leadData.userId).lean();
+            if (!user) {
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: 'Invalid userId - user not found'
+              });
+              continue;
+            }
+          }
+
+          // Resolve project - either by ID or by name
+          let resolvedProjectId = leadData.projectId;
+          let project = null;
+
+          if (!resolvedProjectId && leadData.projectName) {
+            // Try to find project by name (case-insensitive)
+            project = await mongoose.model('Project')
+              .findOne({ name: { $regex: new RegExp(`^${leadData.projectName.trim()}$`, 'i') } })
+              .lean();
+
+            if (project) {
+              resolvedProjectId = project._id.toString();
+            } else {
+              // Get list of available projects for better error message
+              const availableProjects = await mongoose.model('Project')
+                .find({})
+                .select('name')
+                .limit(10)
+                .lean();
+              const projectNames = availableProjects.map(p => p.name).join(', ');
+
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: `Project not found: "${leadData.projectName}". Available projects: ${projectNames || 'None'}`
+              });
+              continue;
+            }
+          } else if (resolvedProjectId) {
+            // Validate project exists by ID
+            project = await mongoose.model('Project').findById(resolvedProjectId).lean();
+            if (!project) {
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: 'Invalid projectId - project not found'
+              });
+              continue;
+            }
+          } else {
+            errors.push({
+              row: rowNumber,
+              data: leadData,
+              error: 'projectId or projectName is required'
+            });
+            continue;
+          }
+
+          // Validate channel partner if provided
+          if (leadData.channelPartnerId) {
+            const cp = await ChannelPartner.findById(leadData.channelPartnerId).lean();
+            if (!cp) {
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: 'Invalid channelPartnerId - channel partner not found'
+              });
+              continue;
+            }
+          }
+
+          // Resolve lead source - either by ID or by name
+          let resolvedLeadSourceId = leadData.leadSourceId;
+          if (!resolvedLeadSourceId && leadData.leadSourceName) {
+            const leadSource = await mongoose.model('LeadSource')
+              .findOne({ name: leadData.leadSourceName })
+              .collation({ locale: 'en', strength: 2 })
+              .lean();
+            if (leadSource) {
+              resolvedLeadSourceId = leadSource._id.toString();
+            } else {
+              // Use default if not found
+              resolvedLeadSourceId = defaultLeadSource._id.toString();
+            }
+          } else if (!resolvedLeadSourceId) {
+            // Use default if neither ID nor name provided
+            resolvedLeadSourceId = defaultLeadSource._id.toString();
+          } else {
+            // Validate lead source if ID provided
+            const ls = await mongoose.model('LeadSource').findById(leadData.leadSourceId).lean();
+            if (!ls) {
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: 'Invalid leadSourceId - lead source not found'
+              });
+              continue;
+            }
+          }
+
+          // Validate CPSourcing if provided
+          if (leadData.cpSourcingId && leadData.channelPartnerId) {
+            const cpSourcing = await CPSourcing.findOne({
+              _id: leadData.cpSourcingId,
+              channelPartnerId: leadData.channelPartnerId,
+              projectId: resolvedProjectId
+            }).lean();
+            if (!cpSourcing) {
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: 'Invalid cpSourcingId - no matching CPSourcing found'
+              });
+              continue;
+            }
+          }
+
+          validLeads.push({
+            user: resolvedUserId,
+            project: resolvedProjectId,
+            channelPartner: leadData.channelPartnerId || null,
+            leadSource: resolvedLeadSourceId,
+            currentStatus: defaultStatus._id,
+            customData: leadData.customData || {},
+            cpSourcingId: leadData.cpSourcingId || null,
+            createdBy: req.user._id,
+            updatedBy: req.user._id
+          });
+        } catch (validationError) {
+          errors.push({
+            row: rowNumber,
+            data: leadData,
+            error: validationError.message
+          });
+        }
+      }
+    }
+
+    // Insert valid leads
+    let insertedCount = 0;
+    const insertedLeads = [];
+
+    if (validLeads.length > 0) {
+      try {
+        const leads = await Lead.insertMany(validLeads, { ordered: false });
+        insertedCount = leads.length;
+        insertedLeads.push(...leads);
+
+        // Log activities for created leads
+        for (const lead of leads) {
+          await logLeadActivity(lead._id, req.user._id, 'created', { data: lead.toObject() });
+        }
+
+        // Update channel partners and CP sourcing to active
+        const channelPartnerIds = [...new Set(validLeads.filter(l => l.channelPartner).map(l => l.channelPartner))];
+        if (channelPartnerIds.length > 0) {
+          await ChannelPartner.updateMany(
+            { _id: { $in: channelPartnerIds } },
+            { $set: { isActive: true } }
+          );
+        }
+
+        const cpSourcingIds = [...new Set(validLeads.filter(l => l.cpSourcingId).map(l => l.cpSourcingId))];
+        if (cpSourcingIds.length > 0) {
+          await CPSourcing.updateMany(
+            { _id: { $in: cpSourcingIds } },
+            { $set: { isActive: true } }
+          );
+        }
+
+        // Send notification
+        if (global.notificationService) {
+          await global.notificationService.sendRoleNotification('superadmin', {
+            type: 'lead_bulk_upload',
+            title: 'Bulk Leads Upload',
+            message: `${insertedCount} leads have been uploaded`,
+            data: {
+              uploadedBy: req.user._id,
+              count: insertedCount
+            },
+            priority: 'normal'
+          });
+        }
+      } catch (insertError) {
+        console.error('bulkUploadLeads - Insert Error:', insertError.message);
+        errors.push({
+          error: `Database insertion error: ${insertError.message}`
+        });
+      }
+    }
+
+    // Clean up uploaded file
+    fs.unlinkSync(filePath);
+
+    res.status(201).json({
+      message: 'Bulk upload completed',
+      summary: {
+        totalRows: rawData.length,
+        successful: insertedCount,
+        failed: errors.length
+      },
+      insertedLeadIds: insertedLeads.map(l => l._id),
+      errors: errors.length > 0 ? errors : undefined
+    });
   } catch (err) {
+    // Clean up uploaded file on error
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
     console.error('bulkUploadLeads - Error:', err.message);
+    res.status(500).json({
+      message: 'Failed to process bulk upload',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
+  }
+};
+
+// Bulk assign user to leads
+const bulkAssignUserToLeads = async (req, res) => {
+  const schema = Joi.object({
+    leadIds: Joi.array().items(Joi.string().hex().length(24)).min(1).required(),
+    userId: Joi.string().hex().length(24).required()
+  });
+
+  const { error } = schema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.details[0].message });
+
+  const { leadIds, userId } = req.body;
+
+  try {
+    // Validate user exists
+    const user = await mongoose.model('User').findById(userId).lean();
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid userId - user not found' });
+    }
+
+    // Find leads and validate permissions
+    const leads = await Lead.find({ _id: { $in: leadIds } }).populate('currentStatus').lean();
+    if (leads.length === 0) {
+      return res.status(404).json({ message: 'No matching leads found' });
+    }
+
+    // Check if any lead has final status
+    const role = await mongoose.model('Role').findById(req.user.roleRef).lean();
+    for (const lead of leads) {
+      if (lead.currentStatus.is_final_status && (!role || role.name !== 'superadmin')) {
+        return res.status(403).json({
+          message: `Only superadmin can assign lead ${lead._id} with final status`
+        });
+      }
+    }
+
+    // Update leads
+    const result = await Lead.updateMany(
+      { _id: { $in: leadIds } },
+      {
+        $set: {
+          user: userId,
+          updatedBy: req.user._id
+        }
+      }
+    );
+
+    // Log activities
+    for (const lead of leads) {
+      await logLeadActivity(lead._id, req.user._id, 'user_assigned', {
+        oldUser: lead.user?.toString(),
+        newUser: userId
+      });
+    }
+
+    // Send notification to new user
+    if (global.notificationService && result.modifiedCount > 0) {
+      const notification = {
+        type: 'lead_assigned',
+        title: 'Leads Assigned to You',
+        message: `${result.modifiedCount} lead(s) have been assigned to you`,
+        data: {
+          leadIds,
+          assignedBy: req.user._id,
+          count: result.modifiedCount
+        },
+        priority: 'high'
+      };
+
+      await global.notificationService.sendNotification(userId, notification);
+
+      // Notify hierarchy
+      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+        type: 'lead_assigned',
+        title: 'Leads Assigned',
+        message: `You assigned ${result.modifiedCount} lead(s) to user ${userId}`,
+        data: {
+          leadIds,
+          toUser: userId,
+          assignedBy: req.user._id
+        },
+        priority: 'normal'
+      });
+    }
+
+    res.json({
+      message: 'Leads assigned successfully',
+      modifiedCount: result.modifiedCount,
+      leadIds: leads.map(l => l._id)
+    });
+  } catch (err) {
+    console.error('bulkAssignUserToLeads - Error:', err.message);
     res.status(500).json({ message: err.message });
   }
 };
@@ -714,7 +1278,8 @@ module.exports = {
   editLead,
   deleteLead,
   changeLeadStatus,
-  bulkUploadLeads: require('multer')({ dest: 'uploads/' }).single('file'),
+  bulkUploadLeads: [bulkUpload.single('file'), bulkUploadLeads],
+  bulkAssignUserToLeads,
   bulkTransferLeads,
   bulkDeleteLeads
 };

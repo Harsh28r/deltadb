@@ -1,0 +1,5 @@
+firstName,lastName,email,phone,leadSource,project,leadPriority,propertyType,configuration,fundingMode,gender,budget,notes
+John,Doe,john.doe@example.com,9876543210,Website,Kasturi,Hot,Residential,2 BHK,Self Funded,Male,50 Lakhs - 1 Crore,Interested in 2BHK apartment
+Jane,Smith,jane.smith@example.com,9876543211,Referral,Mukundam,Warm,Commercial,Commercial Office,Loan,Female,1-2 Crores,Looking for office space
+kriti,smith,kridel.com,9876547211,Website,Kasturi,Hot,Residential,Duplex,loan,Female,3-4 crores,Interested in 2BHK apartment
+Hiten,Mewada,hiten@del.com,9876547211,Channel Parter,Mukundam,cold,Commercial,3 BHK,Self Funded,Male,5-6 crores,Interested in 2BHK apartment
