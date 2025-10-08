@@ -92,7 +92,24 @@ const getReminders = async (req, res) => {
     const reminders = await Reminder.find(query)
       .select('title description dateTime relatedType relatedId userId status createdAt')
       .populate('userId', 'name email')
-      .populate('relatedId', 'name title') // Dynamic based on relatedType
+      .populate({
+        path: 'relatedId',
+        populate: [
+          { path: 'currentStatus', select: 'name' },
+          { path: 'user', select: 'name email' },
+          { path: 'project', select: 'name location' },
+          { path: 'channelPartner', select: 'name firmName phone' },
+          { path: 'leadSource', select: 'name' },
+          {
+            path: 'cpSourcingId',
+            select: 'channelPartnerId projectId',
+            populate: [
+              { path: 'channelPartnerId', select: 'name firmName' },
+              { path: 'projectId', select: 'name location' }
+            ]
+          }
+        ]
+      })
       .sort({ dateTime: 1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -119,7 +136,25 @@ const getReminderById = async (req, res) => {
     const reminder = await Reminder.findById(id)
       .select('title description dateTime relatedType relatedId userId status createdAt')
       .populate('userId', 'name email')
-      .populate('relatedId', 'name title') // Dynamic based on relatedType
+      .populate({
+        path: 'relatedId',
+        select: 'name title currentStatus customData user project channelPartner leadSource cpSourcingId followUpDate reminderDate isActive createdAt',
+        populate: [
+          { path: 'currentStatus', select: 'name' },
+          { path: 'user', select: 'name email' },
+          { path: 'project', select: 'name location' },
+          { path: 'channelPartner', select: 'name firmName phone' },
+          { path: 'leadSource', select: 'name' },
+          { 
+            path: 'cpSourcingId', 
+            select: 'channelPartnerId projectId',
+            populate: [
+              { path: 'channelPartnerId', select: 'name firmName' },
+              { path: 'projectId', select: 'name location' }
+            ]
+          }
+        ]
+      })
       .lean();
 
     if (!reminder) return res.status(404).json({ message: 'Reminder not found' });

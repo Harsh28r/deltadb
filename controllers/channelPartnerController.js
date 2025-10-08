@@ -7,6 +7,8 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const XLSX = require('xlsx');
+const csv = require('csv-parser');
 
 // Enhanced storage configuration
 const storage = multer.diskStorage({
@@ -384,6 +386,238 @@ const serveChannelPartnerPhoto = async (req, res) => {
   }
 };
 
+// Multer configuration for bulk upload files (CSV/Excel)
+const bulkUploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/bulk';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const secureFilename = crypto.randomUUID() + fileExtension;
+    cb(null, secureFilename);
+  }
+});
+
+const bulkUpload = multer({
+  storage: bulkUploadStorage,
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = ['.csv', '.xls', '.xlsx'];
+
+    if (!allowedMimeTypes.includes(file.mimetype) && !allowedExtensions.includes(fileExtension)) {
+      return cb(new Error('Invalid file type. Only CSV and Excel files are allowed'), false);
+    }
+
+    if (file.originalname.includes('..') || file.originalname.includes('/') || file.originalname.includes('\\')) {
+      return cb(new Error('Invalid filename'), false);
+    }
+
+    cb(null, true);
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+    files: 1
+  }
+});
+
+// Parse CSV/Excel file and extract channel partner data
+const parseUploadedFile = async (filePath) => {
+  const fileExtension = path.extname(filePath).toLowerCase();
+  let data = [];
+
+  if (fileExtension === '.csv') {
+    // Parse CSV file
+    return new Promise((resolve, reject) => {
+      const results = [];
+      fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('data', (row) => {
+          results.push(row);
+        })
+        .on('end', () => {
+          resolve(results);
+        })
+        .on('error', (error) => {
+          reject(error);
+        });
+    });
+  } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
+    // Parse Excel file
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    data = XLSX.utils.sheet_to_json(worksheet);
+    return data;
+  } else {
+    throw new Error('Unsupported file format');
+  }
+};
+
+// Bulk upload channel partners from CSV/Excel
+const bulkUploadChannelPartners = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'No file uploaded' });
+  }
+
+  const filePath = req.file.path;
+
+  try {
+    // Parse the uploaded file
+    const rawData = await parseUploadedFile(filePath);
+
+    if (!rawData || rawData.length === 0) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ message: 'File is empty or invalid' });
+    }
+
+    // Validate and transform data
+    const validPartners = [];
+    const errors = [];
+
+    for (let i = 0; i < rawData.length; i++) {
+      const row = rawData[i];
+      const rowNumber = i + 2; // Excel/CSV rows start at 1, plus header row
+
+      // Map CSV/Excel columns to channel partner schema
+      const partnerData = {
+        name: row.name || row.Name || '',
+        phone: row.phone || row.Phone || '',
+        firmName: row.firmName || row.FirmName || row['Firm Name'] || '',
+        location: row.location || row.Location || '',
+        address: row.address || row.Address || '',
+        mahareraNo: row.mahareraNo || row.MahareraNo || row['Maharera No'] || '',
+        pinCode: row.pinCode || row.PinCode || row['Pin Code'] || '',
+        customData: {}
+      };
+
+      // Validate the data
+      const { error } = createChannelPartnerSchema.validate(partnerData);
+
+      if (error) {
+        errors.push({
+          row: rowNumber,
+          data: partnerData,
+          error: error.details[0].message
+        });
+      } else {
+        validPartners.push({
+          ...partnerData,
+          createdBy: req.user._id,
+          updatedBy: req.user._id
+        });
+      }
+    }
+
+    // Check for duplicate phone numbers within the file
+    const phoneNumbers = validPartners.map(p => p.phone);
+    const duplicatePhones = phoneNumbers.filter((phone, index) => phoneNumbers.indexOf(phone) !== index);
+    const uniqueDuplicates = [...new Set(duplicatePhones)];
+
+    // Remove duplicates within the file (keep only first occurrence)
+    if (uniqueDuplicates.length > 0) {
+      const seenPhones = new Set();
+      const tempPartners = [];
+
+      for (const partner of validPartners) {
+        if (!seenPhones.has(partner.phone)) {
+          seenPhones.add(partner.phone);
+          tempPartners.push(partner);
+        } else {
+          errors.push({
+            phone: partner.phone,
+            data: partner,
+            error: 'Duplicate phone number in file (skipped)'
+          });
+        }
+      }
+
+      validPartners.length = 0;
+      validPartners.push(...tempPartners);
+    }
+
+    // Check for existing phone numbers in database and filter them out
+    const existingPartners = await ChannelPartner.find({
+      phone: { $in: validPartners.map(p => p.phone) }
+    }).select('phone name').lean();
+
+    const existingPhones = existingPartners.map(p => p.phone);
+    const skippedExisting = [];
+
+    if (existingPhones.length > 0) {
+      // Filter out existing partners
+      const partnersToInsert = validPartners.filter(partner => {
+        if (existingPhones.includes(partner.phone)) {
+          skippedExisting.push({
+            phone: partner.phone,
+            name: partner.name,
+            error: 'Phone number already exists in database (skipped)'
+          });
+          return false;
+        }
+        return true;
+      });
+
+      validPartners.length = 0;
+      validPartners.push(...partnersToInsert);
+    }
+
+    // Add skipped entries to errors array
+    errors.push(...skippedExisting);
+
+    // Insert valid partners
+    let insertedCount = 0;
+    if (validPartners.length > 0) {
+      const insertedPartners = await ChannelPartner.insertMany(validPartners, { ordered: false });
+      insertedCount = insertedPartners.length;
+
+      // Send notification
+      if (global.notificationService) {
+        await global.notificationService.sendRoleNotification('superadmin', {
+          type: 'channel_partner_bulk_upload',
+          title: 'Bulk Channel Partners Upload',
+          message: `${insertedCount} channel partners have been uploaded`,
+          data: {
+            uploadedBy: req.user._id,
+            count: insertedCount
+          },
+          priority: 'normal'
+        });
+      }
+    }
+
+    // Clean up uploaded file
+    fs.unlinkSync(filePath);
+
+    res.status(201).json({
+      message: 'Bulk upload completed',
+      summary: {
+        totalRows: rawData.length,
+        successful: insertedCount,
+        skipped: errors.filter(e => e.error && e.error.includes('skipped')).length,
+        failed: errors.filter(e => e.error && !e.error.includes('skipped')).length
+      },
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (err) {
+    // Clean up uploaded file on error
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    console.error('bulkUploadChannelPartners - Error:', err.message);
+    res.status(500).json({
+      message: 'Failed to process bulk upload',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   createChannelPartner: [upload.single('photo'), createChannelPartner],
   getChannelPartners,
@@ -393,5 +627,6 @@ module.exports = {
   bulkCreateChannelPartners,
   bulkUpdateChannelPartners,
   bulkDeleteChannelPartners,
+  bulkUploadChannelPartners: [bulkUpload.single('file'), bulkUploadChannelPartners],
   serveChannelPartnerPhoto
 };

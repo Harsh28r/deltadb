@@ -1,0 +1,54 @@
+===============================================
+  REDIS INSTALLATION INSTRUCTIONS
+===============================================
+
+Your application is ready for Redis, but Redis is not installed yet.
+
+OPTION 1: Quick Install (Recommended)
+---------------------------------------
+1. Right-click on "install-redis.ps1" in this folder
+2. Select "Run with PowerShell"
+3. If prompted, click "Yes" to run as Administrator
+4. Wait for installation to complete
+5. Restart your Node.js application
+
+OPTION 2: Manual Install
+---------------------------------------
+1. Open PowerShell as Administrator
+2. Run this command:
+   choco install redis-64 -y
+
+3. After installation, start Redis:
+   Start-Service redis
+
+4. Restart your Node.js application
+
+OPTION 3: Download Memurai
+---------------------------------------
+1. Go to: https://www.memurai.com/get-memurai
+2. Download and install Memurai
+3. Memurai will auto-start on port 6379
+4. Restart your Node.js application
+
+===============================================
+  VERIFY INSTALLATION
+===============================================
+
+After installing, test Redis connection:
+  node -e "const Redis = require('ioredis'); const client = new Redis(); client.ping().then(() => console.log('✅ Connected!')).catch(e => console.error('❌ Error:', e.message));"
+
+===============================================
+  YOUR APP IS WORKING NOW
+===============================================
+
+Your application is currently running WITHOUT Redis.
+All features work, but:
+  - API responses are slower (no caching)
+  - Rate limiting uses MongoDB (slower)
+
+Once you install Redis and restart:
+  - API responses will be 10-100x faster
+  - Rate limiting will be instant
+  - Better performance under load
+
+===============================================

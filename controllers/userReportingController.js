@@ -78,7 +78,7 @@ const createOrUpdateReportingByUserId = async (req, res) => {
             title: 'Reporting Structure Updated',
             message: `Your reporting structure has been updated by ${updatedByName}`,
             data: {
-              userId: userId,
+              userId: userId, 
               userName: targetUser?.name,
               updatedBy: req.user._id,
               updatedByName: updatedByName,
