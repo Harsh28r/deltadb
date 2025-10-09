@@ -237,6 +237,9 @@ const getTodayFollowUps = async (req, res) => {
     const todayStart = new Date(now.setHours(0, 0, 0, 0));
     const todayEnd = new Date(now.setHours(23, 59, 59, 999));
 
+    console.log('📅 getTodayFollowUps - Date range:', { todayStart, todayEnd });
+    console.log('📅 getTodayFollowUps - User:', { id: req.user._id, role: req.user.role, level: req.user.level });
+
     let filter = {
       relatedType: 'lead',
       dateTime: { $gte: todayStart, $lte: todayEnd }
@@ -251,7 +254,16 @@ const getTodayFollowUps = async (req, res) => {
 
       const allowedUserIds = [...new Set([...userReportings.map(ur => ur.user.toString()), req.user._id.toString()])];
       filter.userId = { $in: allowedUserIds };
+      console.log('📅 getTodayFollowUps - Allowed user IDs:', allowedUserIds);
+    } else {
+      console.log('📅 getTodayFollowUps - Superadmin/Level1 access - no user filter');
     }
+
+    console.log('📅 getTodayFollowUps - Query filter:', JSON.stringify(filter));
+
+    // First check total reminders
+    const totalReminders = await Reminder.countDocuments({ relatedType: 'lead' });
+    console.log('📅 getTodayFollowUps - Total lead reminders in DB:', totalReminders);
 
     const reminders = await Reminder.find(filter)
       .populate('userId', 'name email phone')
@@ -265,6 +277,16 @@ const getTodayFollowUps = async (req, res) => {
       })
       .sort({ dateTime: 1 })
       .lean();
+
+    console.log('📅 getTodayFollowUps - Found reminders:', reminders.length);
+    if (reminders.length > 0) {
+      console.log('📅 getTodayFollowUps - Sample reminder:', {
+        id: reminders[0]._id,
+        dateTime: reminders[0].dateTime,
+        userId: reminders[0].userId?._id,
+        relatedId: reminders[0].relatedId?._id
+      });
+    }
 
     const followUps = reminders.map(reminder => ({
       id: reminder._id,

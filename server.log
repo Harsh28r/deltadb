@@ -1,0 +1,111 @@
+
+> deltayards-crm@1.0.0 start
+> node server.js
+
+[dotenv@17.2.1] injecting env (18) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+✅ Reminder service cron jobs initialized
+✅ Real-time system initialized
+MONGO_URI: mongodb+srv://db1:123456g@cluster0.fcyiy3l.mongodb.net/deltacrm?retryWrites=true&w=majority&appName=Cluster0
+Starting MongoDB connection...
+MongoDB connection attempt 1/5
+(node:7496) [MONGOOSE] Warning: Duplicate schema index on {"name":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Mongoose connected to MongoDB
+MongoDB connected successfully
+✅ Redis connected successfully
+🔄 Redis ping successful
+🚀 Creating optimized database indexes for large datasets...
+📊 Creating indexes for User...
+✅ Created index for User: { email: 1 }
+✅ Created index for User: { email: 1, isActive: 1 }
+✅ Created index for User: { role: 1, level: 1 }
+✅ Created index for User: { level: 1, isActive: 1 }
+✅ Created index for User: { role: 1, isActive: 1 }
+✅ Created index for User: { 'restrictions.allowedProjects': 1 }
+✅ Created index for User: { 'restrictions.deniedProjects': 1 }
+✅ Created index for User: { role: 1, level: 1, isActive: 1, createdAt: -1 }
+✅ Created index for User: { email: 1, role: 1, isActive: 1 }
+✅ Created index for User: { name: 'text', email: 'text' }
+📊 Creating indexes for Lead...
+ℹ️ Index already exists for Lead: user_createdAt
+✅ Created index for Lead: { project: 1, createdAt: -1 }
+ℹ️ Index already exists for Lead: currentStatus
+✅ Created index for Lead: { user: 1, project: 1 }
+✅ Created index for Lead: { project: 1, currentStatus: 1 }
+✅ Created index for Lead: { channelPartner: 1, createdAt: -1 }
+ℹ️ Index already exists for Lead: cpSourcingId_createdAt
+✅ Created index for Lead: { isActive: 1, createdAt: -1 }
+✅ Created index for Lead: { createdBy: 1, createdAt: -1 }
+✅ Created index for Lead: { updatedBy: 1, updatedAt: -1 }
+✅ Created index for Lead: { project: 1, currentStatus: 1, isActive: 1, createdAt: -1 }
+✅ Created index for Lead: { user: 1, currentStatus: 1, isActive: 1 }
+✅ Created index for Lead: { channelPartner: 1, currentStatus: 1, isActive: 1 }
+✅ Created index for Lead: { 'statusHistory.changedAt': -1 }
+✅ Created index for Lead: { leadSource: 1, createdAt: -1 }
+✅ Created index for Lead: { leadSource: 1, currentStatus: 1 }
+📊 Creating indexes for Project...
+ℹ️ Index already exists for Project: name
+ℹ️ Index already exists for Project: owner
+ℹ️ Index already exists for Project: members
+ℹ️ Index already exists for Project: managers
+✅ Created index for Project: { location: 1 }
+✅ Created index for Project: { developBy: 1 }
+✅ Created index for Project: { owner: 1, createdAt: -1 }
+✅ Created index for Project: { location: 1, createdAt: -1 }
+✅ Created index for Project: { name: 'text', location: 'text', developBy: 'text' }
+📊 Creating indexes for Task...
+✅ Created index for Task: { assignedTo: 1, createdAt: -1 }
+✅ Created index for Task: { createdBy: 1, createdAt: -1 }
+✅ Created index for Task: { project: 1, createdAt: -1 }
+✅ Created index for Task: { project: 1, status: 1 }
+✅ Created index for Task: { priority: 1, status: 1 }
+✅ Created index for Task: { status: 1, dueDate: 1 }
+✅ Created index for Task: { dueDate: 1, status: 1 }
+✅ Created index for Task: { dueDate: 1, assignedTo: 1 }
+✅ Created index for Task: { assignedTo: 1, status: 1, priority: 1 }
+✅ Created index for Task: { project: 1, assignedTo: 1, status: 1 }
+📊 Creating indexes for Notification...
+✅ Created index for Notification: { recipient: 1, createdAt: -1 }
+✅ Created index for Notification: { recipient: 1, read: 1, createdAt: -1 }
+✅ Created index for Notification: { recipient: 1, read: 1 }
+✅ Created index for Notification: { type: 1, createdAt: -1 }
+✅ Created index for Notification: { recipient: 1, type: 1 }
+✅ Created index for Notification: { createdAt: 1 }
+✅ Created index for Notification: { recipient: 1, priority: 1, read: 1 }
+ℹ️ TTL index already exists for Notification
+📊 Creating indexes for Reminder...
+✅ Created index for Reminder: { user: 1, reminderDate: 1 }
+✅ Created index for Reminder: { user: 1, isCompleted: 1 }
+✅ Created index for Reminder: { reminderDate: 1, isCompleted: 1 }
+✅ Created index for Reminder: { task: 1, reminderDate: 1 }
+✅ Created index for Reminder: { reminderDate: 1, isCompleted: 1, isActive: 1 }
+✅ Created index for Reminder: { isRecurring: 1, reminderDate: 1 }
+📊 Creating indexes for LeadActivity...
+✅ Created index for LeadActivity: { lead: 1, createdAt: -1 }
+✅ Created index for LeadActivity: { user: 1, createdAt: -1 }
+✅ Created index for LeadActivity: { activityType: 1, createdAt: -1 }
+✅ Created index for LeadActivity: { lead: 1, activityType: 1, createdAt: -1 }
+✅ Created index for LeadActivity: { user: 1, activityType: 1, createdAt: -1 }
+✅ Created index for LeadActivity: { createdAt: 1 }
+ℹ️ TTL index already exists for LeadActivity
+📊 Creating indexes for UserReporting...
+✅ Created index for UserReporting: { user: 1 }
+✅ Created index for UserReporting: { level: 1 }
+ℹ️ Index already exists for UserReporting: reportsTo.user
+✅ Created index for UserReporting: { 'reportsTo.teamType': 1 }
+✅ Created index for UserReporting: { user: 1, level: 1 }
+✅ Created index for UserReporting: { level: 1, 'reportsTo.user': 1 }
+✅ Database optimization completed
+📈 Database Optimization Statistics:
+  - Indexes created: 62
+  - Schemas optimized: 0
+  - Query optimizations: 0
+✅ Database optimizations applied
+🚨 UNCAUGHT EXCEPTION! 💥 Shutting down...
+Error: listen EADDRINUSE: address already in use :::5000
+Stack: Error: listen EADDRINUSE: address already in use :::5000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at startServer (C:\Users\harshgupta\Documents\Crmbackend\deltadb\server.js:372:14)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)

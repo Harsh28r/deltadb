@@ -84,30 +84,37 @@ leadSchema.methods.changeStatus = async function (newStatusId, newData, user) {
     this.updatedBy = user._id;
     await this.save();
 
-    // Log activity
+    // Log activity (non-blocking)
     const { logLeadActivity } = require('../controllers/leadActivityController');
-    await logLeadActivity(this._id, user._id, 'status_changed', {
+    logLeadActivity(this._id, user._id, 'status_changed', {
       oldStatus: this.statusHistory[this.statusHistory.length - 1].status,
       newStatus: newStatusId,
       oldData: this.statusHistory[this.statusHistory.length - 1].data,
       newData
-    });
+    }).catch(err => console.error('Activity log error:', err));
 
-    // Send notification
+    // Send notification (non-blocking)
     if (global.notificationService) {
-      await global.notificationService.sendLeadStatusNotification(
-        this,
-        currentStatus,
-        newStatus,
-        user._id
-      );
+      setImmediate(() => {
+        global.notificationService.sendLeadStatusNotification(
+          this,
+          currentStatus,
+          newStatus,
+          user._id
+        ).catch(err => console.error('Notification error:', err));
+      });
     }
 
-    // Auto-create reminders for date/datetime fields in the status
+    // Auto-create reminders for date/datetime fields in the status (BLOCKING for debugging)
     console.log('🔔 Attempting to create reminders for status:', newStatus.name);
-    console.log('🔔 Status fields:', newStatus.formFields);
-    console.log('🔔 Form data received:', newData);
-    await this.createRemindersFromStatusFields(newStatus, newData, user._id);
+    console.log('🔔 Status fields:', JSON.stringify(newStatus.formFields));
+    console.log('🔔 Form data received:', JSON.stringify(newData));
+    try {
+      await this.createRemindersFromStatusFields(newStatus, newData, user._id);
+      console.log('🔔 Reminder creation completed successfully');
+    } catch (err) {
+      console.error('🔔 Reminder creation error:', err);
+    }
 
     return this;
   } catch (error) {
@@ -148,19 +155,23 @@ leadSchema.methods.createRemindersFromStatusFields = async function (status, for
     // Function to check if a value looks like a date
     const isDateValue = (value) => {
       if (!value) return false;
-      // Check if it's a valid date string
-      const dateRegex = /^\d{4}-\d{2}-\d{2}|^\d{2}\/\d{2}\/\d{4}|^\d{2}-\d{2}-\d{4}/;
-      if (dateRegex.test(value)) return true;
+
+      // Convert to string if it's not already
+      const strValue = String(value);
+
+      // Check if it's a valid date string (various formats)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}|^\d{2}\/\d{2}\/\d{4}|^\d{2}-\d{2}-\d{4}|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+      if (dateRegex.test(strValue)) return true;
 
       // Check if it can be parsed as a date
       const parsed = new Date(value);
-      return !isNaN(parsed.getTime());
+      return !isNaN(parsed.getTime()) && parsed.getTime() > 0;
     };
 
     // Find date fields by type OR by name pattern
     const dateFields = (status.formFields || []).filter(field => {
       const fieldType = field.type?.toLowerCase();
-      const isDateType = ['date', 'datetime', 'time'].includes(fieldType);
+      const isDateType = ['date', 'datetime', 'datetime-local', 'time'].includes(fieldType);
       const hasDateName = isDateFieldName(field.name);
 
       console.log(`  Field "${field.name}" - type: "${fieldType}", hasDateName: ${hasDateName}, isDateType: ${isDateType}`);
@@ -212,8 +223,14 @@ leadSchema.methods.createRemindersFromStatusFields = async function (status, for
         reminderDateTime = new Date(fieldValue);
 
         // If no time specified (date only), set to 9 AM
-        if (fieldType === 'date' || fieldValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        if (fieldType === 'date' || String(fieldValue).match(/^\d{4}-\d{2}-\d{2}$/)) {
           reminderDateTime.setHours(9, 0, 0, 0);
+        }
+
+        // For datetime-local, the value is already in correct format
+        // Just ensure it's parsed correctly
+        if (fieldType === 'datetime-local' || fieldType === 'datetime') {
+          console.log(`    ✅ Parsed datetime: ${reminderDateTime.toISOString()}`);
         }
       }
 
@@ -224,27 +241,40 @@ leadSchema.methods.createRemindersFromStatusFields = async function (status, for
       }
 
       // Only create reminder if the date is in the future
-      if (reminderDateTime && reminderDateTime > new Date()) {
+      const now = new Date();
+      if (reminderDateTime && reminderDateTime > now) {
         const reminderData = {
           title: `${status.name} Follow-up: ${field.name}`,
           description: `Follow-up for lead regarding ${field.name} scheduled on ${formatDateTime(reminderDateTime)}`,
           dateTime: reminderDateTime,
           relatedType: 'lead',
           relatedId: this._id,
+          relatedModel: 'Lead', // Required field for refPath
           userId: this.user, // Assigned user for the lead
           status: 'pending',
           createdBy: userId,
           updatedBy: userId
         };
 
+        console.log(`    ✅ Adding reminder for "${field.name}" at ${reminderDateTime.toISOString()}`);
         remindersToCreate.push(reminderData);
+      } else if (reminderDateTime) {
+        console.log(`    ⏭️ Skipping - date ${reminderDateTime.toISOString()} is in the past (now: ${now.toISOString()})`);
       }
     }
 
     // Bulk create all reminders
     if (remindersToCreate.length > 0) {
-      await Reminder.insertMany(remindersToCreate);
+      const createdReminders = await Reminder.insertMany(remindersToCreate);
       console.log(`✅ Created ${remindersToCreate.length} auto-reminders for lead ${this._id}`);
+      console.log('✅ Reminder details:', createdReminders.map(r => ({
+        id: r._id,
+        dateTime: r.dateTime,
+        userId: r.userId,
+        title: r.title
+      })));
+    } else {
+      console.log('⚠️ No reminders created - no valid date fields found');
     }
 
   } catch (error) {
