@@ -162,85 +162,96 @@ const createLead = async (req, res) => {
 
     await lead.save({ context: { userId: req.user._id } });
 
+    // Batch independent database updates in parallel
+    const dbUpdates = [];
+
     if (resolvedChannelPartnerId) {
-      await ChannelPartner.findByIdAndUpdate(resolvedChannelPartnerId, { isActive: true });
+      dbUpdates.push(ChannelPartner.findByIdAndUpdate(resolvedChannelPartnerId, { isActive: true }));
     }
 
     if (cpSourcingId) {
-      await CPSourcing.findByIdAndUpdate(cpSourcingId, { isActive: true });
+      dbUpdates.push(CPSourcing.findByIdAndUpdate(cpSourcingId, { isActive: true }));
     }
 
-    await logLeadActivity(lead._id, req.user._id, 'created', {
+    dbUpdates.push(logLeadActivity(lead._id, req.user._id, 'created', {
       data: { ...req.body, currentStatusId: defaultStatus._id.toString(), cpSourcingId }
-    });
+    }));
 
-    // Send notification to lead owner and superadmins
+    // Execute all database updates in parallel
+    await Promise.all(dbUpdates);
+
+    // Send notifications asynchronously (non-blocking)
     if (global.notificationService) {
-      if (req.body.userId !== req.user._id.toString()) {
-        // Lead assigned to another user - notify them + hierarchy
-        const notification = {
-          type: 'lead_created',
-          title: 'New Lead Assigned',
-          message: `A new lead has been assigned to you`,
-          data: {
-            leadId: lead._id,
-            projectId: resolvedProjectId,
-            createdBy: req.user._id
-          },
-          priority: 'normal'
-        };
+      setImmediate(() => {
+        if (req.body.userId !== req.user._id.toString()) {
+          // Lead assigned to another user - notify them + hierarchy
+          const notification = {
+            type: 'lead_created',
+            title: 'New Lead Assigned',
+            message: `A new lead has been assigned to you`,
+            data: {
+              leadId: lead._id,
+              projectId: resolvedProjectId,
+              createdBy: req.user._id
+            },
+            priority: 'normal'
+          };
 
-        const hierarchyNotif = {
-          ...notification,
-          title: '[Team] New Lead Created & Assigned',
-          message: `Lead ${lead._id} created and assigned to user ${req.body.userId}`
-        };
+          const hierarchyNotif = {
+            ...notification,
+            title: '[Team] New Lead Created & Assigned',
+            message: `Lead ${lead._id} created and assigned to user ${req.body.userId}`
+          };
 
-        await global.notificationService.sendNotificationWithSuperadmin(req.body.userId, notification, hierarchyNotif);
-      } else {
-        // User created lead for themselves - notify hierarchy
-        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
-          type: 'lead_created',
-          title: 'Lead Created',
-          message: `User created new lead ${lead._id}`,
-          data: {
-            leadId: lead._id,
-            projectId: resolvedProjectId,
-            createdBy: req.user._id
-          },
-          priority: 'normal'
-        });
-      }
+          global.notificationService.sendNotificationWithSuperadmin(req.body.userId, notification, hierarchyNotif)
+            .catch(err => console.error('Notification error:', err));
+        } else {
+          // User created lead for themselves - notify hierarchy
+          global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'lead_created',
+            title: 'Lead Created',
+            message: `User created new lead ${lead._id}`,
+            data: {
+              leadId: lead._id,
+              projectId: resolvedProjectId,
+              createdBy: req.user._id
+            },
+            priority: 'normal'
+          }).catch(err => console.error('Notification error:', err));
+        }
 
-      // Also notify creator's hierarchy about the creation activity
-      if (req.body.userId !== req.user._id.toString()) {
-        await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
-          type: 'lead_created',
-          title: 'Lead Created',
-          message: `User created and assigned lead ${lead._id} to ${req.body.userId}`,
-          data: {
-            leadId: lead._id,
-            projectId: resolvedProjectId,
-            assignedTo: req.body.userId,
-            createdBy: req.user._id
-          },
-          priority: 'normal'
-        });
-      }
+        // Also notify creator's hierarchy about the creation activity
+        if (req.body.userId !== req.user._id.toString()) {
+          global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'lead_created',
+            title: 'Lead Created',
+            message: `User created and assigned lead ${lead._id} to ${req.body.userId}`,
+            data: {
+              leadId: lead._id,
+              projectId: resolvedProjectId,
+              assignedTo: req.body.userId,
+              createdBy: req.user._id
+            },
+            priority: 'normal'
+          }).catch(err => console.error('Notification error:', err));
+        }
+      });
     }
 
-    // Broadcast lead creation to WebSocket clients for real-time updates
+    // Broadcast lead creation to WebSocket clients asynchronously (non-blocking)
     if (global.socketManager) {
-      // Notify project members
-      global.socketManager.broadcastToProject(resolvedProjectId, 'lead-created', {
-        lead: lead.toObject(),
-        createdBy: req.user._id
-      });
+      setImmediate(() => {
+        // Notify project members
+        global.socketManager.broadcastToProject(resolvedProjectId, 'lead-created', {
+          lead: lead.toObject(),
+          createdBy: req.user._id
+        });
 
-      // Notify the assigned user
-      global.socketManager.io.to(`user:${req.body.userId}`).emit('lead-assigned', {
-        lead: lead.toObject(),
-        assignedBy: req.user._id
+        // Notify the assigned user
+        global.socketManager.io.to(`user:${req.body.userId}`).emit('lead-assigned', {
+          lead: lead.toObject(),
+          assignedBy: req.user._id
+        });
       });
     }
 
@@ -455,37 +466,42 @@ const editLead = async (req, res) => {
     //   await ChannelPartner.findByIdAndUpdate(req.body.channelPartnerId, { isActive: true });
     // }
 
-    await logLeadActivity(lead._id, req.user._id, 'updated', {
+    // Log activity (non-blocking in background)
+    logLeadActivity(lead._id, req.user._id, 'updated', {
       oldData,
       newData: lead.toObject()
-    });
+    }).catch(err => console.error('Activity log error:', err));
 
-    // Notify hierarchy about lead update
+    // Notify hierarchy about lead update (non-blocking)
     if (global.notificationService) {
-      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
-        type: 'lead_updated',
-        title: 'Lead Updated',
-        message: `User updated lead ${lead._id}`,
-        data: {
-          leadId: lead._id,
-          projectId: lead.project,
-          updatedBy: req.user._id
-        },
-        priority: 'normal'
+      setImmediate(() => {
+        global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'lead_updated',
+          title: 'Lead Updated',
+          message: `User updated lead ${lead._id}`,
+          data: {
+            leadId: lead._id,
+            projectId: lead.project,
+            updatedBy: req.user._id
+          },
+          priority: 'normal'
+        }).catch(err => console.error('Notification error:', err));
       });
     }
 
-    // Broadcast lead update to WebSocket clients for real-time updates
+    // Broadcast lead update to WebSocket clients asynchronously (non-blocking)
     if (global.socketManager) {
-      global.socketManager.broadcastToProject(lead.project, 'lead-updated', {
-        lead: lead.toObject(),
-        updatedBy: req.user._id
-      });
+      setImmediate(() => {
+        global.socketManager.broadcastToProject(lead.project, 'lead-updated', {
+          lead: lead.toObject(),
+          updatedBy: req.user._id
+        });
 
-      // Notify lead owner
-      global.socketManager.io.to(`user:${lead.user}`).emit('lead-updated', {
-        lead: lead.toObject(),
-        updatedBy: req.user._id
+        // Notify lead owner
+        global.socketManager.io.to(`user:${lead.user}`).emit('lead-updated', {
+          lead: lead.toObject(),
+          updatedBy: req.user._id
+        });
       });
     }
 
@@ -507,35 +523,43 @@ const deleteLead = async (req, res) => {
       return res.status(403).json({ message: 'Only superadmin can delete a lead with final status' });
     }
 
-    await logLeadActivity(lead._id, req.user._id, 'deleted', { data: lead.toObject() });
+    const leadData = lead.toObject();
     await lead.deleteOne();
 
-    // Notify hierarchy about lead deletion
+    // Log activity (non-blocking)
+    logLeadActivity(lead._id, req.user._id, 'deleted', { data: leadData })
+      .catch(err => console.error('Activity log error:', err));
+
+    // Notify hierarchy about lead deletion (non-blocking)
     if (global.notificationService) {
-      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
-        type: 'lead_deleted',
-        title: 'Lead Deleted',
-        message: `User deleted lead ${lead._id}`,
-        data: {
-          leadId: lead._id,
-          projectId: lead.project,
-          deletedBy: req.user._id
-        },
-        priority: 'normal'
+      setImmediate(() => {
+        global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'lead_deleted',
+          title: 'Lead Deleted',
+          message: `User deleted lead ${lead._id}`,
+          data: {
+            leadId: lead._id,
+            projectId: lead.project,
+            deletedBy: req.user._id
+          },
+          priority: 'normal'
+        }).catch(err => console.error('Notification error:', err));
       });
     }
 
-    // Broadcast lead deletion to WebSocket clients for real-time updates
+    // Broadcast lead deletion to WebSocket clients asynchronously (non-blocking)
     if (global.socketManager) {
-      global.socketManager.broadcastToProject(lead.project, 'lead-deleted', {
-        leadId: lead._id,
-        deletedBy: req.user._id
-      });
+      setImmediate(() => {
+        global.socketManager.broadcastToProject(lead.project, 'lead-deleted', {
+          leadId: lead._id,
+          deletedBy: req.user._id
+        });
 
-      // Notify lead owner
-      global.socketManager.io.to(`user:${lead.user}`).emit('lead-deleted', {
-        leadId: lead._id,
-        deletedBy: req.user._id
+        // Notify lead owner
+        global.socketManager.io.to(`user:${lead.user}`).emit('lead-deleted', {
+          leadId: lead._id,
+          deletedBy: req.user._id
+        });
       });
     }
 
@@ -563,17 +587,19 @@ const changeLeadStatus = async (req, res) => {
 
     await lead.changeStatus(newStatusId, customData, req.user);
 
-    // Broadcast lead status change to WebSocket clients for real-time updates
+    // Broadcast lead status change to WebSocket clients asynchronously (non-blocking)
     if (global.socketManager) {
-      global.socketManager.broadcastToProject(lead.project, 'lead-status-changed', {
-        lead: lead.toObject(),
-        changedBy: req.user._id
-      });
+      setImmediate(() => {
+        global.socketManager.broadcastToProject(lead.project, 'lead-status-changed', {
+          lead: lead.toObject(),
+          changedBy: req.user._id
+        });
 
-      // Notify lead owner
-      global.socketManager.io.to(`user:${lead.user}`).emit('lead-status-changed', {
-        lead: lead.toObject(),
-        changedBy: req.user._id
+        // Notify lead owner
+        global.socketManager.io.to(`user:${lead.user}`).emit('lead-status-changed', {
+          lead: lead.toObject(),
+          changedBy: req.user._id
+        });
       });
     }
 
@@ -619,78 +645,86 @@ const bulkTransferLeads = async (req, res) => {
       { context: { userId: req.user._id } }
     );
 
-    for (const lead of leads) {
-      await logLeadActivity(lead._id, req.user._id, 'transferred', {
+    // Log activities in parallel (non-blocking)
+    const activityLogs = leads.map(lead =>
+      logLeadActivity(lead._id, req.user._id, 'transferred', {
         fromUser: fromUser,
         toUser: toUser,
         oldProject: lead.project?.toString(),
         newProject: projectId
-      });
-    }
+      }).catch(err => console.error('Activity log error:', err))
+    );
+    Promise.all(activityLogs).catch(err => console.error('Batch activity log error:', err));
 
-    // Send notification to new lead owner and superadmins
+    // Send notification to new lead owner and superadmins (non-blocking)
     if (global.notificationService && result.modifiedCount > 0) {
-      // Get user info for better context
-      const User = require('../models/User');
-      const transferredByUser = await User.findById(req.user._id).select('name email').lean();
-      const transferredByName = transferredByUser ? transferredByUser.name : 'Unknown User';
-
-      const notification = {
-        type: 'lead_transferred',
-        title: 'Leads Assigned to You',
-        message: `${result.modifiedCount} lead(s) have been transferred to you by ${transferredByName}`,
-        data: {
-          leadIds,
-          fromUser,
-          projectId,
-          transferredBy: req.user._id,
-          transferredByName,
-          transferredByEmail: transferredByUser?.email
-        },
-        priority: 'high'
-      };
-
-      const hierarchyNotif = {
-        ...notification,
-        title: '[Team Activity] Leads Transferred',
-        message: `${result.modifiedCount} lead(s) transferred from ${fromUser} to ${toUser} by ${transferredByName}`,
-        data: {
-          ...notification.data,
-          toUser
-        }
-      };
-
-      // Send to new lead owner and their hierarchy (including superadmins)
-      await global.notificationService.sendNotificationWithSuperadmin(toUser, notification, hierarchyNotif);
-
-      // Also notify the person who did the transfer (their hierarchy)
-      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
-        type: 'lead_transferred',
-        title: '[Action] Leads Transferred',
-        message: `You transferred ${result.modifiedCount} lead(s) from ${fromUser} to ${toUser}`,
-        data: {
-          leadIds,
-          fromUser,
-          toUser,
-          projectId,
-          transferredBy: req.user._id,
-          transferredByName
-        },
-        priority: 'high'
-      });
-
-      // Send individual notifications for each transferred lead
-      for (const lead of leads) {
+      setImmediate(async () => {
         try {
-          await global.notificationService.sendLeadAssignmentNotification(
-            lead,
-            toUser,
-            req.user._id
-          );
+          // Get user info for better context
+          const User = require('../models/User');
+          const transferredByUser = await User.findById(req.user._id).select('name email').lean();
+          const transferredByName = transferredByUser ? transferredByUser.name : 'Unknown User';
+
+          const notification = {
+            type: 'lead_transferred',
+            title: 'Leads Assigned to You',
+            message: `${result.modifiedCount} lead(s) have been transferred to you by ${transferredByName}`,
+            data: {
+              leadIds,
+              fromUser,
+              projectId,
+              transferredBy: req.user._id,
+              transferredByName,
+              transferredByEmail: transferredByUser?.email
+            },
+            priority: 'high'
+          };
+
+          const hierarchyNotif = {
+            ...notification,
+            title: '[Team Activity] Leads Transferred',
+            message: `${result.modifiedCount} lead(s) transferred from ${fromUser} to ${toUser} by ${transferredByName}`,
+            data: {
+              ...notification.data,
+              toUser
+            }
+          };
+
+          // Send to new lead owner and their hierarchy (including superadmins)
+          await global.notificationService.sendNotificationWithSuperadmin(toUser, notification, hierarchyNotif);
+
+          // Also notify the person who did the transfer (their hierarchy)
+          await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+            type: 'lead_transferred',
+            title: '[Action] Leads Transferred',
+            message: `You transferred ${result.modifiedCount} lead(s) from ${fromUser} to ${toUser}`,
+            data: {
+              leadIds,
+              fromUser,
+              toUser,
+              projectId,
+              transferredBy: req.user._id,
+              transferredByName
+            },
+            priority: 'high'
+          });
+
+          // Send individual notifications for each transferred lead
+          for (const lead of leads) {
+            try {
+              await global.notificationService.sendLeadAssignmentNotification(
+                lead,
+                toUser,
+                req.user._id
+              );
+            } catch (error) {
+              console.error(`Failed to send individual lead assignment notification for lead ${lead._id}:`, error);
+            }
+          }
         } catch (error) {
-          console.error(`Failed to send individual lead assignment notification for lead ${lead._id}:`, error);
+          console.error('Notification error in bulk transfer:', error);
         }
-      }
+      });
     }
 
     res.json({ message: 'Leads transferred', modifiedCount: result.modifiedCount });
@@ -775,18 +809,27 @@ const parseUploadedFile = async (filePath) => {
 // Validation schema for lead bulk upload
 const leadBulkUploadSchema = Joi.object({
   userId: Joi.string().hex().length(24).optional().allow(''),
+  userEmail: Joi.string().email().optional().allow(''),
   projectId: Joi.string().hex().length(24).optional().allow(''),
   projectName: Joi.string().optional().allow(''),
   channelPartnerId: Joi.string().hex().length(24).optional().allow(''),
+  channelPartnerName: Joi.string().optional().allow(''),
+  channelPartnerPhone: Joi.string().optional().allow(''),
   leadSourceId: Joi.string().hex().length(24).optional().allow(''),
   leadSourceName: Joi.string().optional().allow(''),
   cpSourcingId: Joi.string().hex().length(24).optional().allow(''),
+  cpSourcingName: Joi.string().optional().allow(''),
+  sourcingPersonName: Joi.string().optional().allow(''),
   name: Joi.string().required().min(1).messages({
     'string.empty': 'Lead name is required (provide either "name" or "firstName" and "lastName")',
     'any.required': 'Lead name is required (provide either "name" or "firstName" and "lastName")'
   }),
   phone: Joi.string().optional().allow(''),
   email: Joi.string().optional().allow(''),
+  leadPriority: Joi.string().optional().allow(''),
+  propertyType: Joi.string().optional().allow(''),
+  fundingMode: Joi.string().optional().allow(''),
+  gender: Joi.string().optional().allow(''),
   customData: Joi.object().optional()
 });
 
@@ -860,26 +903,49 @@ const bulkUploadLeads = async (req, res) => {
         leadName = `${firstName} ${lastName}`.trim();
       }
 
+      // Extract channel partner name and phone
+      let rawChannelPartnerId = row.channelPartnerId || row.ChannelPartnerId || row.channelPartner || row.ChannelPartner || '';
+      let rawChannelPartnerName = row.channelPartnerName || row.ChannelPartnerName || row['Channel Partner Name'] || row['Channel Partner'] || '';
+      let rawChannelPartnerPhone = row.channelPartnerPhone || row.ChannelPartnerPhone || row['Channel Partner Phone'] || row['Channel Partner Number'] || '';
+
+      // Smart detection: if channelPartnerId doesn't look like a hex ID, treat it as channelPartnerName
+      if (rawChannelPartnerId && !/^[0-9a-fA-F]{24}$/.test(rawChannelPartnerId)) {
+        rawChannelPartnerName = rawChannelPartnerId;
+        rawChannelPartnerId = '';
+      }
+
       const leadData = {
         userId: row.userId || row.UserId || row.user || row.User || '',
+        userEmail: row.userEmail || row.UserEmail || row['User Email'] || row.email_id || row['Email ID'] || '',
         projectId: rawProjectId,
         projectName: rawProjectName,
-        channelPartnerId: row.channelPartnerId || row.ChannelPartnerId || row.channelPartner || row.ChannelPartner || '',
+        channelPartnerId: rawChannelPartnerId,
+        channelPartnerName: rawChannelPartnerName,
+        channelPartnerPhone: rawChannelPartnerPhone,
         leadSourceId: rawLeadSourceId,
         leadSourceName: rawLeadSourceName,
         cpSourcingId: row.cpSourcingId || row.CpSourcingId || row.CPSourcingId || '',
+        cpSourcingName: row.cpSourcingName || row.CpSourcingName || row['Sourcing Person Name'] || row['Sourcing Name'] || row.sourcingPersonName || row.SourcingPersonName || '',
         // Lead-specific fields
         name: leadName,
-        phone: row.phone || row.Phone || '',
+        phone: row.phone || row.Phone || row.contact || row.Contact || '',
         email: row.email || row.Email || '',
+        leadPriority: row.leadPriority || row.LeadPriority || row['Lead Priority'] || row.priority || row.Priority || '',
+        propertyType: row.propertyType || row.PropertyType || row['Property Type'] || '',
+        fundingMode: row.fundingMode || row.FundingMode || row['Funding Mode'] || '',
+        gender: row.gender || row.Gender || '',
         customData: {}
       };
 
-      // Build customData from lead-specific fields and any additional customData
+      // Build customData from standard lead fields
       const customDataFields = {};
       if (leadData.name) customDataFields.name = leadData.name;
-      if (leadData.phone) customDataFields.phone = leadData.phone;
+      if (leadData.phone) customDataFields.contact = leadData.phone;
       if (leadData.email) customDataFields.email = leadData.email;
+      if (leadData.leadPriority) customDataFields.leadPriority = leadData.leadPriority;
+      if (leadData.propertyType) customDataFields.propertyType = leadData.propertyType;
+      if (leadData.fundingMode) customDataFields.fundingMode = leadData.fundingMode;
+      if (leadData.gender) customDataFields.gender = leadData.gender;
 
       // Parse customData if present and merge with lead fields
       if (row.customData || row.CustomData) {
@@ -901,11 +967,19 @@ const bulkUploadLeads = async (req, res) => {
       }
 
       // Also check for any other columns not mapped and add them to customData
-      const mappedColumns = ['userId', 'UserId', 'user', 'User', 'projectId', 'ProjectId', 'project', 'Project',
+      const mappedColumns = ['userId', 'UserId', 'user', 'User', 'userEmail', 'UserEmail', 'User Email', 'email_id', 'Email ID',
+                             'projectId', 'ProjectId', 'project', 'Project',
                              'projectName', 'ProjectName', 'Project Name', 'channelPartnerId', 'ChannelPartnerId',
-                             'channelPartner', 'ChannelPartner', 'leadSourceId', 'LeadSourceId', 'leadSource',
+                             'channelPartner', 'ChannelPartner', 'channelPartnerName', 'ChannelPartnerName', 'Channel Partner Name', 'Channel Partner',
+                             'channelPartnerPhone', 'ChannelPartnerPhone', 'Channel Partner Phone', 'Channel Partner Number',
+                             'leadSourceId', 'LeadSourceId', 'leadSource',
                              'LeadSource', 'leadSourceName', 'LeadSourceName', 'Lead Source', 'cpSourcingId',
-                             'CpSourcingId', 'CPSourcingId', 'name', 'Name', 'phone', 'Phone', 'email', 'Email',
+                             'CpSourcingId', 'CPSourcingId', 'cpSourcingName', 'CpSourcingName', 'Sourcing Person Name', 'Sourcing Name',
+                             'sourcingPersonName', 'SourcingPersonName', 'name', 'Name', 'firstName', 'FirstName', 'First Name',
+                             'lastName', 'LastName', 'Last Name', 'phone', 'Phone', 'contact', 'Contact',
+                             'email', 'Email', 'leadPriority', 'LeadPriority', 'Lead Priority', 'priority', 'Priority',
+                             'propertyType', 'PropertyType', 'Property Type',
+                             'fundingMode', 'FundingMode', 'Funding Mode', 'gender', 'Gender',
                              'customData', 'CustomData'];
 
       for (const key in row) {
@@ -928,9 +1002,24 @@ const bulkUploadLeads = async (req, res) => {
         try {
           // Resolve userId - default to current user if not provided
           let resolvedUserId = leadData.userId;
-          if (!resolvedUserId) {
+
+          // If no userId but userEmail is provided, find user by email
+          if (!resolvedUserId && leadData.userEmail) {
+            const user = await mongoose.model('User').findOne({ email: leadData.userEmail.trim().toLowerCase() }).lean();
+            if (!user) {
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: `User not found with email: ${leadData.userEmail}`
+              });
+              continue;
+            }
+            resolvedUserId = user._id.toString();
+          } else if (!resolvedUserId) {
+            // Default to current user if neither userId nor userEmail provided
             resolvedUserId = req.user._id.toString();
           } else {
+            // Validate userId if provided
             const user = await mongoose.model('User').findById(leadData.userId).lean();
             if (!user) {
               errors.push({
@@ -990,9 +1079,40 @@ const bulkUploadLeads = async (req, res) => {
             continue;
           }
 
-          // Validate channel partner if provided
-          if (leadData.channelPartnerId) {
-            const cp = await ChannelPartner.findById(leadData.channelPartnerId).lean();
+          // Validate and resolve channel partner if provided
+          let resolvedChannelPartnerId = leadData.channelPartnerId;
+          if (!resolvedChannelPartnerId && (leadData.channelPartnerName || leadData.channelPartnerPhone)) {
+            // Try to find channel partner by name or phone
+            let cp = null;
+
+            if (leadData.channelPartnerPhone) {
+              // First try to find by phone (exact match)
+              cp = await ChannelPartner.findOne({ phone: leadData.channelPartnerPhone.trim() }).lean();
+            }
+
+            if (!cp && leadData.channelPartnerName) {
+              // If not found by phone, try by name (case-insensitive)
+              cp = await ChannelPartner
+                .findOne({ name: { $regex: new RegExp(`^${leadData.channelPartnerName.trim()}$`, 'i') } })
+                .lean();
+            }
+
+            if (cp) {
+              resolvedChannelPartnerId = cp._id.toString();
+            } else {
+              const searchCriteria = leadData.channelPartnerPhone
+                ? `phone "${leadData.channelPartnerPhone}"`
+                : `name "${leadData.channelPartnerName}"`;
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: `Channel Partner not found with ${searchCriteria}`
+              });
+              continue;
+            }
+          } else if (resolvedChannelPartnerId) {
+            // Validate channel partner exists by ID
+            const cp = await ChannelPartner.findById(resolvedChannelPartnerId).lean();
             if (!cp) {
               errors.push({
                 row: rowNumber,
@@ -1013,13 +1133,14 @@ const bulkUploadLeads = async (req, res) => {
             if (leadSource) {
               resolvedLeadSourceId = leadSource._id.toString();
             } else {
-              // Use default if not found
-              resolvedLeadSourceId = defaultLeadSource._id.toString();
+              errors.push({
+                row: rowNumber,
+                data: leadData,
+                error: `Lead source not found: "${leadData.leadSourceName}"`
+              });
+              continue;
             }
-          } else if (!resolvedLeadSourceId) {
-            // Use default if neither ID nor name provided
-            resolvedLeadSourceId = defaultLeadSource._id.toString();
-          } else {
+          } else if (resolvedLeadSourceId) {
             // Validate lead source if ID provided
             const ls = await mongoose.model('LeadSource').findById(leadData.leadSourceId).lean();
             if (!ls) {
@@ -1030,33 +1151,75 @@ const bulkUploadLeads = async (req, res) => {
               });
               continue;
             }
+          } else {
+            // No lead source provided - use default
+            resolvedLeadSourceId = defaultLeadSource._id.toString();
           }
 
-          // Validate CPSourcing if provided
-          if (leadData.cpSourcingId && leadData.channelPartnerId) {
-            const cpSourcing = await CPSourcing.findOne({
-              _id: leadData.cpSourcingId,
-              channelPartnerId: leadData.channelPartnerId,
-              projectId: resolvedProjectId
-            }).lean();
-            if (!cpSourcing) {
-              errors.push({
-                row: rowNumber,
-                data: leadData,
-                error: 'Invalid cpSourcingId - no matching CPSourcing found'
-              });
-              continue;
+          // Validate and resolve CPSourcing if provided
+          let resolvedCpSourcingId = leadData.cpSourcingId;
+
+          // Only process CPSourcing if we have a channel partner
+          if (resolvedChannelPartnerId) {
+            if (!resolvedCpSourcingId && leadData.cpSourcingName) {
+              // Try to find sourcing person by name and match with channel partner and project
+              const User = mongoose.model('User');
+              const sourcingUser = await User.findOne({
+                name: { $regex: new RegExp(`^${leadData.cpSourcingName.trim()}$`, 'i') }
+              }).lean();
+
+              if (sourcingUser) {
+                // Find CPSourcing matching user, channel partner, and project
+                const cpSourcing = await CPSourcing.findOne({
+                  userId: sourcingUser._id,
+                  channelPartnerId: resolvedChannelPartnerId,
+                  projectId: resolvedProjectId
+                }).lean();
+
+                if (cpSourcing) {
+                  resolvedCpSourcingId = cpSourcing._id.toString();
+                } else {
+                  errors.push({
+                    row: rowNumber,
+                    data: leadData,
+                    error: `CPSourcing not found for sourcing person "${leadData.cpSourcingName}" with the given channel partner and project`
+                  });
+                  continue;
+                }
+              } else {
+                errors.push({
+                  row: rowNumber,
+                  data: leadData,
+                  error: `Sourcing person not found: "${leadData.cpSourcingName}"`
+                });
+                continue;
+              }
+            } else if (resolvedCpSourcingId) {
+              // Validate CPSourcing by ID
+              const cpSourcing = await CPSourcing.findOne({
+                _id: resolvedCpSourcingId,
+                channelPartnerId: resolvedChannelPartnerId,
+                projectId: resolvedProjectId
+              }).lean();
+              if (!cpSourcing) {
+                errors.push({
+                  row: rowNumber,
+                  data: leadData,
+                  error: 'Invalid cpSourcingId - no matching CPSourcing found'
+                });
+                continue;
+              }
             }
           }
 
           validLeads.push({
             user: resolvedUserId,
             project: resolvedProjectId,
-            channelPartner: leadData.channelPartnerId || null,
+            channelPartner: resolvedChannelPartnerId || null,
             leadSource: resolvedLeadSourceId,
             currentStatus: defaultStatus._id,
             customData: leadData.customData || {},
-            cpSourcingId: leadData.cpSourcingId || null,
+            cpSourcingId: resolvedCpSourcingId || null,
             createdBy: req.user._id,
             updatedBy: req.user._id
           });
@@ -1195,41 +1358,45 @@ const bulkAssignUserToLeads = async (req, res) => {
       }
     );
 
-    // Log activities
-    for (const lead of leads) {
-      await logLeadActivity(lead._id, req.user._id, 'user_assigned', {
+    // Log activities in parallel (non-blocking)
+    const activityLogs = leads.map(lead =>
+      logLeadActivity(lead._id, req.user._id, 'user_assigned', {
         oldUser: lead.user?.toString(),
         newUser: userId
-      });
-    }
+      }).catch(err => console.error('Activity log error:', err))
+    );
+    Promise.all(activityLogs).catch(err => console.error('Batch activity log error:', err));
 
-    // Send notification to new user
+    // Send notification to new user (non-blocking)
     if (global.notificationService && result.modifiedCount > 0) {
-      const notification = {
-        type: 'lead_assigned',
-        title: 'Leads Assigned to You',
-        message: `${result.modifiedCount} lead(s) have been assigned to you`,
-        data: {
-          leadIds,
-          assignedBy: req.user._id,
-          count: result.modifiedCount
-        },
-        priority: 'high'
-      };
+      setImmediate(() => {
+        const notification = {
+          type: 'lead_assigned',
+          title: 'Leads Assigned to You',
+          message: `${result.modifiedCount} lead(s) have been assigned to you`,
+          data: {
+            leadIds,
+            assignedBy: req.user._id,
+            count: result.modifiedCount
+          },
+          priority: 'high'
+        };
 
-      await global.notificationService.sendNotification(userId, notification);
+        global.notificationService.sendNotification(userId, notification)
+          .catch(err => console.error('Notification error:', err));
 
-      // Notify hierarchy
-      await global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
-        type: 'lead_assigned',
-        title: 'Leads Assigned',
-        message: `You assigned ${result.modifiedCount} lead(s) to user ${userId}`,
-        data: {
-          leadIds,
-          toUser: userId,
-          assignedBy: req.user._id
-        },
-        priority: 'normal'
+        // Notify hierarchy
+        global.notificationService.sendHierarchyNotification(req.user._id.toString(), {
+          type: 'lead_assigned',
+          title: 'Leads Assigned',
+          message: `You assigned ${result.modifiedCount} lead(s) to user ${userId}`,
+          data: {
+            leadIds,
+            toUser: userId,
+            assignedBy: req.user._id
+          },
+          priority: 'normal'
+        }).catch(err => console.error('Notification error:', err));
       });
     }
 
@@ -1259,9 +1426,12 @@ const bulkDeleteLeads = async (req, res) => {
       }
     }
 
-    for (const lead of leads) {
-      await logLeadActivity(lead._id, req.user._id, 'deleted', { data: lead });
-    }
+    // Log activities in parallel (non-blocking)
+    const activityLogs = leads.map(lead =>
+      logLeadActivity(lead._id, req.user._id, 'deleted', { data: lead })
+        .catch(err => console.error('Activity log error:', err))
+    );
+    Promise.all(activityLogs).catch(err => console.error('Batch activity log error:', err));
 
     const result = await Lead.deleteMany(req.body.query);
     res.json({ message: 'Bulk delete successful', deletedCount: result.deletedCount });

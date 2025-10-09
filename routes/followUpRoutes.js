@@ -10,16 +10,16 @@ const {
   getFollowUpsByProject
 } = require('../controllers/followUpController');
 
-// Get all follow-ups with filters (cache for 5 minutes)
-router.get('/', auth, checkPermission('reminders:read'), redisCache.middleware(300), getAllFollowUps);
+// Get all follow-ups with filters (no cache for real-time updates)
+router.get('/', auth, checkPermission('reminders:read'), getAllFollowUps);
 
-// Get follow-up statistics (cache for 10 minutes)
-router.get('/stats', auth, checkPermission('reminders:read'), redisCache.middleware(600), getFollowUpStats);
+// Get follow-up statistics (no cache for real-time updates)
+router.get('/stats', auth, checkPermission('reminders:read'), getFollowUpStats);
 
-// Get today's follow-ups (cache for 2 minutes)
-router.get('/today', auth, checkPermission('reminders:read'), redisCache.middleware(120), getTodayFollowUps);
+// Get today's follow-ups (no cache for real-time updates)
+router.get('/today', auth, checkPermission('reminders:read'), getTodayFollowUps);
 
-// Get follow-ups by project (cache for 5 minutes)
-router.get('/project/:projectId', auth, checkPermission('reminders:read'), redisCache.middleware(300), getFollowUpsByProject);
+// Get follow-ups by project (no cache for real-time updates)
+router.get('/project/:projectId', auth, checkPermission('reminders:read'), getFollowUpsByProject);
 
 module.exports = router;
