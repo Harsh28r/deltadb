@@ -7,7 +7,8 @@ const {
   getAllFollowUps,
   getFollowUpStats,
   getTodayFollowUps,
-  getFollowUpsByProject
+  getFollowUpsByProject,
+  cleanupDuplicateReminders
 } = require('../controllers/followUpController');
 
 // Get all follow-ups with filters (no cache for real-time updates)
@@ -21,5 +22,8 @@ router.get('/today', auth, checkPermission('reminders:read'), getTodayFollowUps)
 
 // Get follow-ups by project (no cache for real-time updates)
 router.get('/project/:projectId', auth, checkPermission('reminders:read'), getFollowUpsByProject);
+
+// Clean up duplicate reminders (admin only)
+router.post('/cleanup-duplicates', auth, checkPermission('reminders:write'), cleanupDuplicateReminders);
 
 module.exports = router;

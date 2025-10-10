@@ -119,11 +119,21 @@ const createLead = async (req, res) => {
       }
     }
 
-    // Resolve lead source
-    let resolvedLeadSourceId = req.body.leadSourceId;
-    if (!resolvedLeadSourceId) {
-      if (req.body.leadSource) {
-        const providedName = String(req.body.leadSource || '').trim();
+    // Resolve lead source from either leadSourceId or leadSource
+    let resolvedLeadSourceId = req.body.leadSourceId || req.body.leadSource;
+
+    // If leadSource/leadSourceId is provided, validate it
+    if (resolvedLeadSourceId) {
+      // Check if it's a valid ObjectId (24 hex characters)
+      if (mongoose.isValidObjectId(resolvedLeadSourceId)) {
+        // Validate that the lead source exists
+        const leadSourceExists = await mongoose.model('LeadSource').findById(resolvedLeadSourceId).lean();
+        if (!leadSourceExists) {
+          return res.status(400).json({ message: 'Invalid lead source ID' });
+        }
+      } else {
+        // Treat it as a name and try to find by name
+        const providedName = String(resolvedLeadSourceId).trim();
         const byName = await mongoose.model('LeadSource')
           .findOne({ name: providedName })
           .collation({ locale: 'en', strength: 2 })
@@ -131,21 +141,17 @@ const createLead = async (req, res) => {
         if (byName) {
           resolvedLeadSourceId = byName._id;
         } else {
-          const fallback = await mongoose.model('LeadSource')
-            .findOne({ name: 'Channel Partner' })
-            .collation({ locale: 'en', strength: 2 })
-            .lean();
-          if (!fallback) return res.status(400).json({ message: 'LeadSource not configured. Please initialize Lead Sources.' });
-          resolvedLeadSourceId = fallback._id;
+          return res.status(400).json({ message: `Lead source not found: "${providedName}"` });
         }
-      } else {
-        const fallback = await mongoose.model('LeadSource')
-          .findOne({ name: 'Channel Partner' })
-          .collation({ locale: 'en', strength: 2 })
-          .lean();
-        if (!fallback) return res.status(400).json({ message: 'LeadSource not configured. Please initialize Lead Sources.' });
-        resolvedLeadSourceId = fallback._id;
       }
+    } else {
+      // No lead source provided - use default "Channel Partner"
+      const fallback = await mongoose.model('LeadSource')
+        .findOne({ name: 'Channel Partner' })
+        .collation({ locale: 'en', strength: 2 })
+        .lean();
+      if (!fallback) return res.status(400).json({ message: 'LeadSource not configured. Please initialize Lead Sources.' });
+      resolvedLeadSourceId = fallback._id;
     }
 
     const lead = new Lead({

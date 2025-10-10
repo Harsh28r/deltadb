@@ -12,14 +12,15 @@ const getFollowUpsSchema = Joi.object({
   startDate: Joi.date().optional(),
   endDate: Joi.date().optional(),
   status: Joi.string().valid('pending', 'sent', 'dismissed').optional(),
-  type: Joi.string().valid('upcoming', 'overdue', 'today', 'all').default('all'),
+  type: Joi.string().valid('pending', 'today', 'tomorrow', 'upcoming', 'all').default('all'),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20)
 });
 
 /**
  * Get all follow-ups/meetings across the system
- * Supports filtering by user, project, date range, status
+ * Supports filtering by user, project, date range, status, and time-based categorization
+ * ?type=pending|today|tomorrow|upcoming|all (default: all)
  */
 const getAllFollowUps = async (req, res) => {
   const { error, value } = getFollowUpsSchema.validate(req.query);
@@ -28,8 +29,8 @@ const getAllFollowUps = async (req, res) => {
   try {
     const { userId, projectId, statusId, startDate, endDate, status, type, page, limit } = value;
 
-    // Build filter query
-    let filter = {
+    // Build base filter
+    let baseFilter = {
       relatedType: 'lead'
     };
 
@@ -41,37 +42,193 @@ const getAllFollowUps = async (req, res) => {
       }).lean();
 
       const allowedUserIds = [...new Set([...userReportings.map(ur => ur.user.toString()), req.user._id.toString()])];
-      filter.userId = { $in: allowedUserIds };
+      baseFilter.userId = { $in: allowedUserIds };
     }
 
-    // Apply filters
-    if (userId) filter.userId = userId;
-    if (status) filter.status = status;
+    if (userId) baseFilter.userId = userId;
+    if (status) baseFilter.status = status;
 
-    // Date range filters
+    // Define time boundaries
     const now = new Date();
-    const todayStart = new Date(now.setHours(0, 0, 0, 0));
-    const todayEnd = new Date(now.setHours(23, 59, 59, 999));
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const tomorrowStart = new Date(todayEnd.getTime() + 1);
+    const tomorrowEnd = new Date(tomorrowStart.getFullYear(), tomorrowStart.getMonth(), tomorrowStart.getDate(), 23, 59, 59, 999);
 
-    if (type === 'upcoming') {
-      filter.dateTime = { $gte: new Date() };
-      filter.status = 'pending';
-    } else if (type === 'overdue') {
-      filter.dateTime = { $lt: new Date() };
+    // If type is 'all', return categorized results
+    if (type === 'all') {
+      const [pendingReminders, todayReminders, tomorrowReminders, upcomingReminders] = await Promise.all([
+        // Pending (Overdue)
+        Reminder.find({
+          ...baseFilter,
+          dateTime: { $lt: now },
+          status: 'pending'
+        })
+          .populate('userId', 'name email phone')
+          .populate({
+            path: 'relatedId',
+            select: 'currentStatus customData project user channelPartner leadSource',
+            populate: [
+              { path: 'currentStatus', select: 'name formFields' },
+              { path: 'project', select: 'name' },
+              { path: 'user', select: 'name email phone' },
+              { path: 'channelPartner', select: 'name phone email' },
+              { path: 'leadSource', select: 'name' }
+            ]
+          })
+          .sort({ dateTime: 1 })
+          .lean(),
+
+        // Today
+        Reminder.find({
+          ...baseFilter,
+          dateTime: { $gte: now, $lte: todayEnd },
+          status: 'pending'
+        })
+          .populate('userId', 'name email phone')
+          .populate({
+            path: 'relatedId',
+            select: 'currentStatus customData project user channelPartner leadSource',
+            populate: [
+              { path: 'currentStatus', select: 'name formFields' },
+              { path: 'project', select: 'name' },
+              { path: 'user', select: 'name email phone' },
+              { path: 'channelPartner', select: 'name phone email' },
+              { path: 'leadSource', select: 'name' }
+            ]
+          })
+          .sort({ dateTime: 1 })
+          .lean(),
+
+        // Tomorrow
+        Reminder.find({
+          ...baseFilter,
+          dateTime: { $gte: tomorrowStart, $lte: tomorrowEnd },
+          status: 'pending'
+        })
+          .populate('userId', 'name email phone')
+          .populate({
+            path: 'relatedId',
+            select: 'currentStatus customData project user channelPartner leadSource',
+            populate: [
+              { path: 'currentStatus', select: 'name formFields' },
+              { path: 'project', select: 'name' },
+              { path: 'user', select: 'name email phone' },
+              { path: 'channelPartner', select: 'name phone email' },
+              { path: 'leadSource', select: 'name' }
+            ]
+          })
+          .sort({ dateTime: 1 })
+          .lean(),
+
+        // Upcoming
+        Reminder.find({
+          ...baseFilter,
+          dateTime: { $gt: tomorrowEnd },
+          status: 'pending'
+        })
+          .populate('userId', 'name email phone')
+          .populate({
+            path: 'relatedId',
+            select: 'currentStatus customData project user channelPartner leadSource',
+            populate: [
+              { path: 'currentStatus', select: 'name formFields' },
+              { path: 'project', select: 'name' },
+              { path: 'user', select: 'name email phone' },
+              { path: 'channelPartner', select: 'name phone email' },
+              { path: 'leadSource', select: 'name' }
+            ]
+          })
+          .sort({ dateTime: 1 })
+          .lean()
+      ]);
+
+      // Apply project and status filters
+      const filterByProjectStatus = (reminders) => {
+        if (!projectId && !statusId) return reminders;
+        return reminders.filter(reminder => {
+          if (!reminder.relatedId) return false;
+          if (projectId && reminder.relatedId.project?._id?.toString() !== projectId) return false;
+          if (statusId && reminder.relatedId.currentStatus?._id?.toString() !== statusId) return false;
+          return true;
+        });
+      };
+
+      const formatReminder = (reminder) => ({
+        id: reminder._id,
+        title: reminder.title,
+        description: reminder.description,
+        dateTime: formatDateForAPI(reminder.dateTime),
+        status: reminder.status,
+        assignedTo: reminder.userId ? {
+          id: reminder.userId._id,
+          name: reminder.userId.name,
+          email: reminder.userId.email,
+          phone: reminder.userId.phone
+        } : null,
+        lead: reminder.relatedId ? {
+          id: reminder.relatedId._id,
+          status: reminder.relatedId.currentStatus?.name,
+          customData: reminder.relatedId.customData,
+          project: reminder.relatedId.project?.name,
+          assignedTo: reminder.relatedId.user ? {
+            id: reminder.relatedId.user._id,
+            name: reminder.relatedId.user.name,
+            email: reminder.relatedId.user.email
+          } : null,
+          channelPartner: reminder.relatedId.channelPartner?.name,
+          leadSource: reminder.relatedId.leadSource?.name
+        } : null,
+        createdAt: formatDateForAPI(reminder.createdAt)
+      });
+
+      const categorized = {
+        pending: filterByProjectStatus(pendingReminders).map(formatReminder),
+        today: filterByProjectStatus(todayReminders).map(formatReminder),
+        tomorrow: filterByProjectStatus(tomorrowReminders).map(formatReminder),
+        upcoming: filterByProjectStatus(upcomingReminders).map(formatReminder)
+      };
+
+      return res.json({
+        followUps: categorized,
+        summary: {
+          pending: categorized.pending.length,
+          today: categorized.today.length,
+          tomorrow: categorized.tomorrow.length,
+          upcoming: categorized.upcoming.length,
+          total: categorized.pending.length + categorized.today.length +
+                 categorized.tomorrow.length + categorized.upcoming.length
+        },
+        timestamp: now.toISOString()
+      });
+    }
+
+    // Single type filter
+    let filter = { ...baseFilter };
+
+    if (type === 'pending') {
+      filter.dateTime = { $lt: now };
       filter.status = 'pending';
     } else if (type === 'today') {
       filter.dateTime = { $gte: todayStart, $lte: todayEnd };
+      filter.status = 'pending';
+    } else if (type === 'tomorrow') {
+      filter.dateTime = { $gte: tomorrowStart, $lte: tomorrowEnd };
+      filter.status = 'pending';
+    } else if (type === 'upcoming') {
+      filter.dateTime = { $gt: tomorrowEnd };
+      filter.status = 'pending';
     }
 
+    // Apply custom date range if provided
     if (startDate && endDate) {
       filter.dateTime = { $gte: new Date(startDate), $lte: new Date(endDate) };
     } else if (startDate) {
-      filter.dateTime = { $gte: new Date(startDate) };
+      filter.dateTime = { ...filter.dateTime, $gte: new Date(startDate) };
     } else if (endDate) {
-      filter.dateTime = { $lte: new Date(endDate) };
+      filter.dateTime = { ...filter.dateTime, $lte: new Date(endDate) };
     }
 
-    // Get reminders with populated lead data
     const totalItems = await Reminder.countDocuments(filter);
     const totalPages = Math.ceil(totalItems / limit);
 
@@ -93,23 +250,16 @@ const getAllFollowUps = async (req, res) => {
       .limit(limit)
       .lean();
 
-    // Apply project and status filters on populated data
+    // Apply project and status filters
     if (projectId || statusId) {
       reminders = reminders.filter(reminder => {
         if (!reminder.relatedId) return false;
-
-        let matches = true;
-        if (projectId && reminder.relatedId.project?._id?.toString() !== projectId) {
-          matches = false;
-        }
-        if (statusId && reminder.relatedId.currentStatus?._id?.toString() !== statusId) {
-          matches = false;
-        }
-        return matches;
+        if (projectId && reminder.relatedId.project?._id?.toString() !== projectId) return false;
+        if (statusId && reminder.relatedId.currentStatus?._id?.toString() !== statusId) return false;
+        return true;
       });
     }
 
-    // Format response
     const followUps = reminders.map(reminder => ({
       id: reminder._id,
       title: reminder.title,
@@ -380,9 +530,536 @@ const getFollowUpsByProject = async (req, res) => {
   }
 };
 
+/**
+ * Get follow-ups categorized by time period (Today, Tomorrow, Upcoming, Pending)
+ */
+const getCategorizedFollowUps = async (req, res) => {
+  try {
+    const userId = req.query.userId || req.user._id.toString();
+
+    console.log('📅 getCategorizedFollowUps - User:', { id: userId, role: req.user.role });
+
+    let baseFilter = {
+      relatedType: 'lead'
+    };
+
+    // Apply user hierarchy filter
+    if (req.user.role !== 'superadmin' && req.user.level !== 1) {
+      const userReportings = await UserReporting.find({
+        'reportsTo.path': { $regex: `/(${req.user._id})/` },
+        'reportsTo.teamType': 'project'
+      }).lean();
+
+      const allowedUserIds = [...new Set([...userReportings.map(ur => ur.user.toString()), req.user._id.toString()])];
+      baseFilter.userId = { $in: allowedUserIds };
+    }
+
+    if (userId) baseFilter.userId = userId;
+
+    // Define time boundaries
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const tomorrowStart = new Date(todayEnd.getTime() + 1);
+    const tomorrowEnd = new Date(tomorrowStart.getFullYear(), tomorrowStart.getMonth(), tomorrowStart.getDate(), 23, 59, 59, 999);
+
+    console.log('📅 Time boundaries:', {
+      now: now.toISOString(),
+      todayStart: todayStart.toISOString(),
+      todayEnd: todayEnd.toISOString(),
+      tomorrowStart: tomorrowStart.toISOString(),
+      tomorrowEnd: tomorrowEnd.toISOString()
+    });
+
+    // Query for each category
+    const [pendingReminders, todayReminders, tomorrowReminders, upcomingReminders] = await Promise.all([
+      // Pending (Overdue) - dateTime is in the past and status is still pending
+      Reminder.find({
+        ...baseFilter,
+        dateTime: { $lt: now },
+        status: 'pending'
+      })
+        .populate('userId', 'name email phone')
+        .populate({
+          path: 'relatedId',
+          populate: [
+            { path: 'currentStatus', select: 'name' },
+            { path: 'project', select: 'name' },
+            { path: 'user', select: 'name email' },
+            { path: 'channelPartner', select: 'name phone' },
+            { path: 'leadSource', select: 'name' }
+          ]
+        })
+        .sort({ dateTime: 1 })
+        .lean(),
+
+      // Today - dateTime is today (but not in the past)
+      Reminder.find({
+        ...baseFilter,
+        dateTime: { $gte: now, $lte: todayEnd },
+        status: 'pending'
+      })
+        .populate('userId', 'name email phone')
+        .populate({
+          path: 'relatedId',
+          populate: [
+            { path: 'currentStatus', select: 'name' },
+            { path: 'project', select: 'name' },
+            { path: 'user', select: 'name email' },
+            { path: 'channelPartner', select: 'name phone' },
+            { path: 'leadSource', select: 'name' }
+          ]
+        })
+        .sort({ dateTime: 1 })
+        .lean(),
+
+      // Tomorrow
+      Reminder.find({
+        ...baseFilter,
+        dateTime: { $gte: tomorrowStart, $lte: tomorrowEnd },
+        status: 'pending'
+      })
+        .populate('userId', 'name email phone')
+        .populate({
+          path: 'relatedId',
+          populate: [
+            { path: 'currentStatus', select: 'name' },
+            { path: 'project', select: 'name' },
+            { path: 'user', select: 'name email' },
+            { path: 'channelPartner', select: 'name phone' },
+            { path: 'leadSource', select: 'name' }
+          ]
+        })
+        .sort({ dateTime: 1 })
+        .lean(),
+
+      // Upcoming (after tomorrow)
+      Reminder.find({
+        ...baseFilter,
+        dateTime: { $gt: tomorrowEnd },
+        status: 'pending'
+      })
+        .populate('userId', 'name email phone')
+        .populate({
+          path: 'relatedId',
+          populate: [
+            { path: 'currentStatus', select: 'name' },
+            { path: 'project', select: 'name' },
+            { path: 'user', select: 'name email' },
+            { path: 'channelPartner', select: 'name phone' },
+            { path: 'leadSource', select: 'name' }
+          ]
+        })
+        .sort({ dateTime: 1 })
+        .lean()
+    ]);
+
+    // Format reminders
+    const formatReminder = (reminder) => ({
+      id: reminder._id,
+      title: reminder.title,
+      description: reminder.description,
+      dateTime: formatDateForAPI(reminder.dateTime),
+      status: reminder.status,
+      assignedTo: reminder.userId ? {
+        id: reminder.userId._id,
+        name: reminder.userId.name,
+        email: reminder.userId.email,
+        phone: reminder.userId.phone
+      } : null,
+      lead: reminder.relatedId ? {
+        id: reminder.relatedId._id,
+        status: reminder.relatedId.currentStatus?.name,
+        customData: reminder.relatedId.customData,
+        project: reminder.relatedId.project?.name,
+        assignedTo: reminder.relatedId.user ? {
+          id: reminder.relatedId.user._id,
+          name: reminder.relatedId.user.name,
+          email: reminder.relatedId.user.email
+        } : null,
+        channelPartner: reminder.relatedId.channelPartner?.name,
+        leadSource: reminder.relatedId.leadSource?.name
+      } : null,
+      createdAt: formatDateForAPI(reminder.createdAt)
+    });
+
+    const categorized = {
+      pending: pendingReminders.map(formatReminder),
+      today: todayReminders.map(formatReminder),
+      tomorrow: tomorrowReminders.map(formatReminder),
+      upcoming: upcomingReminders.map(formatReminder)
+    };
+
+    console.log('📅 Categorized counts:', {
+      pending: categorized.pending.length,
+      today: categorized.today.length,
+      tomorrow: categorized.tomorrow.length,
+      upcoming: categorized.upcoming.length
+    });
+
+    res.json({
+      followUps: categorized,
+      summary: {
+        pending: categorized.pending.length,
+        today: categorized.today.length,
+        tomorrow: categorized.tomorrow.length,
+        upcoming: categorized.upcoming.length,
+        total: categorized.pending.length + categorized.today.length +
+               categorized.tomorrow.length + categorized.upcoming.length
+      },
+      timestamp: now.toISOString()
+    });
+
+  } catch (err) {
+    console.error('getCategorizedFollowUps - Error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * Get pending (overdue) follow-ups
+ */
+const getPendingFollowUps = async (req, res) => {
+  try {
+    const userId = req.query.userId;
+
+    let filter = {
+      relatedType: 'lead',
+      dateTime: { $lt: new Date() },
+      status: 'pending'
+    };
+
+    // Apply user hierarchy filter
+    if (req.user.role !== 'superadmin' && req.user.level !== 1) {
+      const userReportings = await UserReporting.find({
+        'reportsTo.path': { $regex: `/(${req.user._id})/` },
+        'reportsTo.teamType': 'project'
+      }).lean();
+
+      const allowedUserIds = [...new Set([...userReportings.map(ur => ur.user.toString()), req.user._id.toString()])];
+      filter.userId = { $in: allowedUserIds };
+    }
+
+    if (userId) filter.userId = userId;
+
+    const reminders = await Reminder.find(filter)
+      .populate('userId', 'name email phone')
+      .populate({
+        path: 'relatedId',
+        populate: [
+          { path: 'currentStatus', select: 'name' },
+          { path: 'project', select: 'name' },
+          { path: 'user', select: 'name email' },
+          { path: 'channelPartner', select: 'name phone' },
+          { path: 'leadSource', select: 'name' }
+        ]
+      })
+      .sort({ dateTime: 1 })
+      .lean();
+
+    const formatReminder = (reminder) => ({
+      id: reminder._id,
+      title: reminder.title,
+      description: reminder.description,
+      dateTime: formatDateForAPI(reminder.dateTime),
+      status: reminder.status,
+      assignedTo: reminder.userId ? {
+        id: reminder.userId._id,
+        name: reminder.userId.name,
+        email: reminder.userId.email,
+        phone: reminder.userId.phone
+      } : null,
+      lead: reminder.relatedId ? {
+        id: reminder.relatedId._id,
+        status: reminder.relatedId.currentStatus?.name,
+        customData: reminder.relatedId.customData,
+        project: reminder.relatedId.project?.name,
+        assignedTo: reminder.relatedId.user ? {
+          id: reminder.relatedId.user._id,
+          name: reminder.relatedId.user.name,
+          email: reminder.relatedId.user.email
+        } : null,
+        channelPartner: reminder.relatedId.channelPartner?.name,
+        leadSource: reminder.relatedId.leadSource?.name
+      } : null,
+      createdAt: formatDateForAPI(reminder.createdAt)
+    });
+
+    const followUps = reminders.map(formatReminder);
+
+    res.json({
+      followUps,
+      count: followUps.length,
+      type: 'pending'
+    });
+
+  } catch (err) {
+    console.error('getPendingFollowUps - Error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * Get tomorrow's follow-ups
+ */
+const getTomorrowFollowUps = async (req, res) => {
+  try {
+    const userId = req.query.userId;
+
+    const now = new Date();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const tomorrowStart = new Date(todayEnd.getTime() + 1);
+    const tomorrowEnd = new Date(tomorrowStart.getFullYear(), tomorrowStart.getMonth(), tomorrowStart.getDate(), 23, 59, 59, 999);
+
+    let filter = {
+      relatedType: 'lead',
+      dateTime: { $gte: tomorrowStart, $lte: tomorrowEnd },
+      status: 'pending'
+    };
+
+    // Apply user hierarchy filter
+    if (req.user.role !== 'superadmin' && req.user.level !== 1) {
+      const userReportings = await UserReporting.find({
+        'reportsTo.path': { $regex: `/(${req.user._id})/` },
+        'reportsTo.teamType': 'project'
+      }).lean();
+
+      const allowedUserIds = [...new Set([...userReportings.map(ur => ur.user.toString()), req.user._id.toString()])];
+      filter.userId = { $in: allowedUserIds };
+    }
+
+    if (userId) filter.userId = userId;
+
+    const reminders = await Reminder.find(filter)
+      .populate('userId', 'name email phone')
+      .populate({
+        path: 'relatedId',
+        populate: [
+          { path: 'currentStatus', select: 'name' },
+          { path: 'project', select: 'name' },
+          { path: 'user', select: 'name email' },
+          { path: 'channelPartner', select: 'name phone' },
+          { path: 'leadSource', select: 'name' }
+        ]
+      })
+      .sort({ dateTime: 1 })
+      .lean();
+
+    const formatReminder = (reminder) => ({
+      id: reminder._id,
+      title: reminder.title,
+      description: reminder.description,
+      dateTime: formatDateForAPI(reminder.dateTime),
+      status: reminder.status,
+      assignedTo: reminder.userId ? {
+        id: reminder.userId._id,
+        name: reminder.userId.name,
+        email: reminder.userId.email,
+        phone: reminder.userId.phone
+      } : null,
+      lead: reminder.relatedId ? {
+        id: reminder.relatedId._id,
+        status: reminder.relatedId.currentStatus?.name,
+        customData: reminder.relatedId.customData,
+        project: reminder.relatedId.project?.name,
+        assignedTo: reminder.relatedId.user ? {
+          id: reminder.relatedId.user._id,
+          name: reminder.relatedId.user.name,
+          email: reminder.relatedId.user.email
+        } : null,
+        channelPartner: reminder.relatedId.channelPartner?.name,
+        leadSource: reminder.relatedId.leadSource?.name
+      } : null,
+      createdAt: formatDateForAPI(reminder.createdAt)
+    });
+
+    const followUps = reminders.map(formatReminder);
+
+    res.json({
+      followUps,
+      count: followUps.length,
+      type: 'tomorrow'
+    });
+
+  } catch (err) {
+    console.error('getTomorrowFollowUps - Error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * Get upcoming follow-ups (after tomorrow)
+ */
+const getUpcomingFollowUps = async (req, res) => {
+  try {
+    const userId = req.query.userId;
+
+    const now = new Date();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const tomorrowStart = new Date(todayEnd.getTime() + 1);
+    const tomorrowEnd = new Date(tomorrowStart.getFullYear(), tomorrowStart.getMonth(), tomorrowStart.getDate(), 23, 59, 59, 999);
+
+    let filter = {
+      relatedType: 'lead',
+      dateTime: { $gt: tomorrowEnd },
+      status: 'pending'
+    };
+
+    // Apply user hierarchy filter
+    if (req.user.role !== 'superadmin' && req.user.level !== 1) {
+      const userReportings = await UserReporting.find({
+        'reportsTo.path': { $regex: `/(${req.user._id})/` },
+        'reportsTo.teamType': 'project'
+      }).lean();
+
+      const allowedUserIds = [...new Set([...userReportings.map(ur => ur.user.toString()), req.user._id.toString()])];
+      filter.userId = { $in: allowedUserIds };
+    }
+
+    if (userId) filter.userId = userId;
+
+    const reminders = await Reminder.find(filter)
+      .populate('userId', 'name email phone')
+      .populate({
+        path: 'relatedId',
+        populate: [
+          { path: 'currentStatus', select: 'name' },
+          { path: 'project', select: 'name' },
+          { path: 'user', select: 'name email' },
+          { path: 'channelPartner', select: 'name phone' },
+          { path: 'leadSource', select: 'name' }
+        ]
+      })
+      .sort({ dateTime: 1 })
+      .lean();
+
+    const formatReminder = (reminder) => ({
+      id: reminder._id,
+      title: reminder.title,
+      description: reminder.description,
+      dateTime: formatDateForAPI(reminder.dateTime),
+      status: reminder.status,
+      assignedTo: reminder.userId ? {
+        id: reminder.userId._id,
+        name: reminder.userId.name,
+        email: reminder.userId.email,
+        phone: reminder.userId.phone
+      } : null,
+      lead: reminder.relatedId ? {
+        id: reminder.relatedId._id,
+        status: reminder.relatedId.currentStatus?.name,
+        customData: reminder.relatedId.customData,
+        project: reminder.relatedId.project?.name,
+        assignedTo: reminder.relatedId.user ? {
+          id: reminder.relatedId.user._id,
+          name: reminder.relatedId.user.name,
+          email: reminder.relatedId.user.email
+        } : null,
+        channelPartner: reminder.relatedId.channelPartner?.name,
+        leadSource: reminder.relatedId.leadSource?.name
+      } : null,
+      createdAt: formatDateForAPI(reminder.createdAt)
+    });
+
+    const followUps = reminders.map(formatReminder);
+
+    res.json({
+      followUps,
+      count: followUps.length,
+      type: 'upcoming'
+    });
+
+  } catch (err) {
+    console.error('getUpcomingFollowUps - Error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * Clean up duplicate reminders
+ * Removes duplicate reminders for the same lead with same title and date
+ */
+const cleanupDuplicateReminders = async (req, res) => {
+  try {
+    console.log('🧹 Starting duplicate reminder cleanup...');
+
+    // Find all reminders grouped by lead, title, and dateTime
+    const duplicates = await Reminder.aggregate([
+      {
+        $match: {
+          relatedType: 'lead',
+          status: 'pending'
+        }
+      },
+      {
+        $group: {
+          _id: {
+            relatedId: '$relatedId',
+            title: '$title',
+            dateTime: '$dateTime'
+          },
+          ids: { $push: '$_id' },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $match: {
+          count: { $gt: 1 } // Only groups with duplicates
+        }
+      }
+    ]);
+
+    console.log(`🧹 Found ${duplicates.length} groups of duplicate reminders`);
+
+    let deletedCount = 0;
+
+    for (const group of duplicates) {
+      // Keep the first one (oldest), delete the rest
+      const idsToDelete = group.ids.slice(1);
+
+      const result = await Reminder.deleteMany({
+        _id: { $in: idsToDelete }
+      });
+
+      deletedCount += result.deletedCount;
+      console.log(`  🗑️ Deleted ${result.deletedCount} duplicates for group:`, {
+        relatedId: group._id.relatedId,
+        title: group._id.title,
+        kept: group.ids[0],
+        deleted: idsToDelete
+      });
+    }
+
+    console.log(`✅ Cleanup complete - removed ${deletedCount} duplicate reminders`);
+
+    res.json({
+      message: 'Duplicate cleanup completed',
+      duplicateGroups: duplicates.length,
+      remindersDeleted: deletedCount,
+      details: duplicates.map(d => ({
+        lead: d._id.relatedId,
+        title: d._id.title,
+        dateTime: d._id.dateTime,
+        duplicateCount: d.count,
+        keptReminder: d.ids[0],
+        deletedCount: d.count - 1
+      }))
+    });
+
+  } catch (err) {
+    console.error('cleanupDuplicateReminders - Error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getAllFollowUps,
   getFollowUpStats,
   getTodayFollowUps,
-  getFollowUpsByProject
+  getFollowUpsByProject,
+  getCategorizedFollowUps,
+  getPendingFollowUps,
+  getTomorrowFollowUps,
+  getUpcomingFollowUps,
+  cleanupDuplicateReminders
 };

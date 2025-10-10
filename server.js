@@ -78,6 +78,7 @@ const reminderRoutes = require('./routes/reminderRoutes');
 const followUpRoutes = require('./routes/followUpRoutes');
 const testNotificationRoutes = require('./routes/testNotificationRoutes');
 const testReminderRoutes = require('./routes/testReminderRoutes');
+const attendanceRoutes = require('./routes/attendanceRoutes');
 // const { smartRateLimiter } = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 const { globalErrorHandler } = require('./middleware/errorHandler');
@@ -126,6 +127,10 @@ app.use(corsDebug);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+
+// Serve uploaded files (selfies, etc.)
+app.use('/uploads', express.static('uploads'));
+
 // Apply rate limiting
 // app.use(smartRateLimiter);
 
@@ -237,6 +242,7 @@ app.use('/api/user-reporting', userReportingRoutes);
 // app.use('/api/user-projects', userProjectRoutes);
 app.use('/api/user', userDashboardRoutes);
 app.use('/api/permissions', permissionRoutes);
+app.use('/api/follow-ups', followUpRoutes);
 
 app.use('/api/cp-sourcing', cpSourcingRoutes);
 app.use('/api/channel-partner', channelPartnerRouters);
@@ -247,6 +253,7 @@ app.use('/api/reminder', reminderRoutes);
 app.use('/api/follow-ups', followUpRoutes);
 app.use('/api/test', testNotificationRoutes);
 app.use('/api/test-reminder', testReminderRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
