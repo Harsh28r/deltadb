@@ -263,16 +263,48 @@ leadSchema.methods.createRemindersFromStatusFields = async function (status, for
       }
     }
 
-    // Bulk create all reminders
+    // Check for existing reminders and create/update accordingly
     if (remindersToCreate.length > 0) {
-      const createdReminders = await Reminder.insertMany(remindersToCreate);
-      console.log(`✅ Created ${remindersToCreate.length} auto-reminders for lead ${this._id}`);
-      console.log('✅ Reminder details:', createdReminders.map(r => ({
-        id: r._id,
-        dateTime: r.dateTime,
-        userId: r.userId,
-        title: r.title
-      })));
+      const createdReminders = [];
+      const updatedReminders = [];
+
+      for (const reminderData of remindersToCreate) {
+        // Check if a similar reminder already exists for this lead
+        // A "similar" reminder is one with the same lead, user, and date field (based on title)
+        const existingReminder = await Reminder.findOne({
+          relatedId: this._id,
+          relatedType: 'lead',
+          userId: this.user,
+          title: reminderData.title,
+          status: 'pending' // Only check pending reminders
+        });
+
+        if (existingReminder) {
+          // Update existing reminder if the date is different
+          if (existingReminder.dateTime.getTime() !== reminderData.dateTime.getTime()) {
+            existingReminder.dateTime = reminderData.dateTime;
+            existingReminder.description = reminderData.description;
+            existingReminder.updatedBy = userId;
+            await existingReminder.save();
+            updatedReminders.push(existingReminder);
+            console.log(`    🔄 Updated existing reminder "${reminderData.title}" - new date: ${reminderData.dateTime.toISOString()}`);
+          } else {
+            console.log(`    ⏭️ Skipping duplicate reminder "${reminderData.title}" - already exists with same date`);
+          }
+        } else {
+          // Create new reminder
+          const newReminder = await Reminder.create(reminderData);
+          createdReminders.push(newReminder);
+          console.log(`    ✅ Created new reminder "${reminderData.title}" at ${reminderData.dateTime.toISOString()}`);
+        }
+      }
+
+      if (createdReminders.length > 0) {
+        console.log(`✅ Created ${createdReminders.length} new auto-reminders for lead ${this._id}`);
+      }
+      if (updatedReminders.length > 0) {
+        console.log(`🔄 Updated ${updatedReminders.length} existing reminders for lead ${this._id}`);
+      }
     } else {
       console.log('⚠️ No reminders created - no valid date fields found');
     }
