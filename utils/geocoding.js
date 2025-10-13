@@ -1,9 +1,11 @@
 const axios = require('axios');
+const { reverseGeocodeWithCache } = require('./geocodingCache');
 
 /**
  * Geocoding Utility
  * Supports multiple providers: Google Maps, OpenStreetMap (Nominatim)
  * Falls back to alternative providers if primary fails
+ * Includes caching to reduce API costs
  */
 
 /**
@@ -126,10 +128,50 @@ function parseGoogleAddressComponents(components) {
 }
 
 /**
- * Main reverse geocode function with fallback
- * Tries Google first (if API key available), falls back to OSM
+ * Internal geocoding function without cache (used by cache wrapper)
  */
-async function reverseGeocode(latitude, longitude) {
+async function _reverseGeocodeInternal(latitude, longitude) {
+  // Try Google Maps first if API key is configured
+  if (process.env.GOOGLE_MAPS_API_KEY) {
+    try {
+      return await reverseGeocodeGoogle(latitude, longitude);
+    } catch (error) {
+      console.warn('Google geocoding failed, falling back to OpenStreetMap:', error.message);
+    }
+  }
+
+  // Fall back to OpenStreetMap
+  try {
+    return await reverseGeocodeOSM(latitude, longitude);
+  } catch (error) {
+    console.error('All geocoding providers failed');
+
+    // Return a basic address if all providers fail
+    return {
+      formattedAddress: `Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+      components: {
+        street: '',
+        area: '',
+        city: '',
+        district: '',
+        state: '',
+        country: '',
+        postalCode: '',
+        countryCode: ''
+      },
+      placeId: null,
+      provider: 'fallback',
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Main reverse geocode function with caching and fallback
+ * Tries Google first (if API key available), falls back to OSM
+ * Results are cached for 24 hours to reduce API costs
+ */
+async function reverseGeocode(latitude, longitude, options = {}) {
   // Validate coordinates
   if (!latitude || !longitude) {
     throw new Error('Latitude and longitude are required');
@@ -146,39 +188,8 @@ async function reverseGeocode(latitude, longitude) {
     throw new Error('Coordinates out of valid range');
   }
 
-  // Try Google Maps first if API key is configured
-  if (process.env.GOOGLE_MAPS_API_KEY) {
-    try {
-      return await reverseGeocodeGoogle(lat, lng);
-    } catch (error) {
-      console.warn('Google geocoding failed, falling back to OpenStreetMap:', error.message);
-    }
-  }
-
-  // Fall back to OpenStreetMap
-  try {
-    return await reverseGeocodeOSM(lat, lng);
-  } catch (error) {
-    console.error('All geocoding providers failed');
-
-    // Return a basic address if all providers fail
-    return {
-      formattedAddress: `Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-      components: {
-        street: '',
-        area: '',
-        city: '',
-        district: '',
-        state: '',
-        country: '',
-        postalCode: '',
-        countryCode: ''
-      },
-      placeId: null,
-      provider: 'fallback',
-      error: error.message
-    };
-  }
+  // Use cached geocoding
+  return await reverseGeocodeWithCache(_reverseGeocodeInternal, lat, lng, options);
 }
 
 /**
