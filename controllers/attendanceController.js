@@ -2,11 +2,35 @@ const Attendance = require('../models/Attendance');
 const User = require('../models/User');
 const UserReporting = require('../models/UserReporting');
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Save base64 image to file system
+ */
+const saveBase64Image = (base64String, dir) => {
+  const matches = base64String.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
+  if (!matches) throw new Error('Invalid base64 image');
+  const ext = matches[1].toLowerCase();
+  if (!['jpeg', 'jpg', 'png', 'webp'].includes(ext)) throw new Error('Unsupported image format');
+  const buffer = Buffer.from(matches[2], 'base64');
+  const filename = `${Date.now()}-selfie.${ext}`;
+  const filepath = path.join(dir, filename);
+
+  // Ensure directory exists
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(filepath, buffer);
+  return filepath;
+};
 
 /**
  * User Check-In
  * POST /api/attendance/check-in
  * Body: { latitude, longitude, address, accuracy, selfie, notes, deviceInfo }
+ * Supports both file upload (multipart) and base64 string (JSON)
  */
 exports.checkIn = async (req, res) => {
   try {
@@ -15,13 +39,16 @@ exports.checkIn = async (req, res) => {
 
     // Debug logging
     console.log('Check-in request body:', req.body);
+    console.log('Has file upload:', !!req.file);
+    console.log('Has selfie string:', !!selfie);
     console.log('Latitude:', latitude, 'Type:', typeof latitude);
     console.log('Longitude:', longitude, 'Type:', typeof longitude);
 
-    // Validate selfie is mandatory
-    if (!selfie || selfie.trim() === '') {
+    // Validate selfie is mandatory (either file or string)
+    if (!req.file && (!selfie || selfie.trim() === '')) {
       return res.status(400).json({
-        message: 'Selfie is required for check-in'
+        message: 'Selfie is required for check-in',
+        hint: 'Provide either a file upload or base64 string'
       });
     }
 
@@ -78,6 +105,31 @@ exports.checkIn = async (req, res) => {
       });
     }
 
+    // Handle selfie - support both file upload and base64 string
+    let selfiePath = '';
+    const uploadDir = path.join(__dirname, '..', 'uploads', 'attendance', 'selfies');
+
+    if (req.file) {
+      // File was uploaded via multipart/form-data
+      selfiePath = req.file.path;
+      console.log('✅ Using uploaded file:', selfiePath);
+    } else if (selfie && selfie.startsWith('data:image/')) {
+      // Base64 image provided
+      try {
+        selfiePath = saveBase64Image(selfie, uploadDir);
+        console.log('✅ Saved base64 image:', selfiePath);
+      } catch (err) {
+        return res.status(400).json({
+          message: 'Invalid base64 image format',
+          error: err.message
+        });
+      }
+    } else if (selfie) {
+      // URL or other string format
+      selfiePath = selfie;
+      console.log('✅ Using selfie URL/string:', selfiePath);
+    }
+
     // Get device info from request
     const deviceInfo = {
       userAgent: req.headers['user-agent'],
@@ -98,7 +150,7 @@ exports.checkIn = async (req, res) => {
           accuracy: accuracy ? parseFloat(accuracy) : null
         },
         deviceInfo,
-        selfie,
+        selfie: selfiePath,
         notes
       },
       status: 'checked-in'
@@ -135,6 +187,7 @@ exports.checkIn = async (req, res) => {
  * User Check-Out
  * POST /api/attendance/check-out
  * Body: { latitude, longitude, address, accuracy, selfie, notes }
+ * Supports both file upload (multipart) and base64 string (JSON)
  */
 exports.checkOut = async (req, res) => {
   try {
@@ -143,11 +196,14 @@ exports.checkOut = async (req, res) => {
 
     // Debug logging
     console.log('Check-out request body:', req.body);
+    console.log('Has file upload:', !!req.file);
+    console.log('Has selfie string:', !!selfie);
 
-    // Validate selfie is mandatory
-    if (!selfie || selfie.trim() === '') {
+    // Validate selfie is mandatory (either file or string)
+    if (!req.file && (!selfie || selfie.trim() === '')) {
       return res.status(400).json({
-        message: 'Selfie is required for check-out'
+        message: 'Selfie is required for check-out',
+        hint: 'Provide either a file upload or base64 string'
       });
     }
 
@@ -193,6 +249,31 @@ exports.checkOut = async (req, res) => {
       });
     }
 
+    // Handle selfie - support both file upload and base64 string
+    let selfiePath = '';
+    const uploadDir = path.join(__dirname, '..', 'uploads', 'attendance', 'selfies');
+
+    if (req.file) {
+      // File was uploaded via multipart/form-data
+      selfiePath = req.file.path;
+      console.log('✅ Using uploaded file:', selfiePath);
+    } else if (selfie && selfie.startsWith('data:image/')) {
+      // Base64 image provided
+      try {
+        selfiePath = saveBase64Image(selfie, uploadDir);
+        console.log('✅ Saved base64 image:', selfiePath);
+      } catch (err) {
+        return res.status(400).json({
+          message: 'Invalid base64 image format',
+          error: err.message
+        });
+      }
+    } else if (selfie) {
+      // URL or other string format
+      selfiePath = selfie;
+      console.log('✅ Using selfie URL/string:', selfiePath);
+    }
+
     // Get device info
     const deviceInfo = {
       userAgent: req.headers['user-agent'],
@@ -210,7 +291,7 @@ exports.checkOut = async (req, res) => {
         accuracy: accuracy ? parseFloat(accuracy) : null
       },
       deviceInfo,
-      selfie,
+      selfie: selfiePath,
       notes
     };
 
@@ -680,17 +761,45 @@ exports.getUserAttendanceDetails = async (req, res) => {
 /**
  * SUPERADMIN - Get Live Attendance Dashboard
  * GET /api/attendance/admin/live
+ * Query: date, startDate, endDate
  */
 exports.getLiveAttendanceDashboard = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { date, startDate, endDate } = req.query;
 
-    // Get today's attendance
+    let dateFilter = {};
+
+    if (date) {
+      // Filter by specific date
+      const searchDate = new Date(date);
+      searchDate.setHours(0, 0, 0, 0);
+      const nextDay = new Date(searchDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      dateFilter = { $gte: searchDate, $lt: nextDay };
+    } else if (startDate || endDate) {
+      // Filter by date range
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.$lte = end;
+      }
+    } else {
+      // Default to today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      dateFilter = { $gte: today, $lt: tomorrow };
+    }
+
+    // Get attendance records for the filtered date(s)
     const todayAttendance = await Attendance.find({
-      date: { $gte: today, $lt: tomorrow }
+      date: dateFilter
     })
       .populate('user', 'name email mobile role level')
       .sort({ 'checkIn.time': -1 })
@@ -719,7 +828,8 @@ exports.getLiveAttendanceDashboard = async (req, res) => {
     });
 
     res.json({
-      date: today,
+      date: date || startDate || new Date().toISOString().split('T')[0],
+      dateRange: startDate && endDate ? { startDate, endDate } : null,
       summary: {
         totalUsers: allUsers.length,
         checkedIn: checkedInUsers.length,
@@ -735,6 +845,7 @@ exports.getLiveAttendanceDashboard = async (req, res) => {
           longitude: att.checkIn.location.coordinates[0],
           address: att.checkIn.location.address
         },
+        checkInSelfie: att.checkIn?.selfie,
         hoursWorked: att.totalHours || ((new Date() - new Date(att.checkIn.time)) / (1000 * 60 * 60)).toFixed(2),
         isOnBreak: att.breaks && att.breaks.length > 0 && !att.breaks[att.breaks.length - 1].endTime,
         workLocations: att.workLocations?.length || 0
@@ -742,7 +853,9 @@ exports.getLiveAttendanceDashboard = async (req, res) => {
       checkedOutUsers: checkedOutUsers.map(att => ({
         user: att.user,
         checkInTime: att.checkIn.time,
+        checkInSelfie: att.checkIn?.selfie,
         checkOutTime: att.checkOut.time,
+        checkOutSelfie: att.checkOut?.selfie,
         totalHours: att.totalHours,
         checkOutLocation: {
           latitude: att.checkOut.location.coordinates[1],

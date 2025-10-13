@@ -68,11 +68,11 @@ const upload = multer({
 const createChannelPartnerSchema = Joi.object({
   name: Joi.string().required().min(3).max(100).trim(),
   phone: Joi.string().required().length(10).pattern(/^\d{10}$/),
-  firmName: Joi.string().required().min(3).max(100).trim(),
-  location: Joi.string().required().trim(),
-  address: Joi.string().required().trim(),
-  mahareraNo: Joi.string().trim().optional(),
-  pinCode: Joi.string().required().length(6).pattern(/^\d{6}$/),
+  firmName: Joi.string().optional().allow('').min(3).max(100).trim(),
+  location: Joi.string().optional().allow('').trim(),
+  address: Joi.string().optional().allow('').trim(),
+  mahareraNo: Joi.string().trim().optional().allow(''),
+  pinCode: Joi.string().optional().allow('').length(6).pattern(/^\d{6}$/),
   customData: Joi.object().optional()
 });
 
@@ -515,61 +515,7 @@ const bulkUploadChannelPartners = async (req, res) => {
       }
     }
 
-    // Check for duplicate phone numbers within the file
-    const phoneNumbers = validPartners.map(p => p.phone);
-    const duplicatePhones = phoneNumbers.filter((phone, index) => phoneNumbers.indexOf(phone) !== index);
-    const uniqueDuplicates = [...new Set(duplicatePhones)];
-
-    // Remove duplicates within the file (keep only first occurrence)
-    if (uniqueDuplicates.length > 0) {
-      const seenPhones = new Set();
-      const tempPartners = [];
-
-      for (const partner of validPartners) {
-        if (!seenPhones.has(partner.phone)) {
-          seenPhones.add(partner.phone);
-          tempPartners.push(partner);
-        } else {
-          errors.push({
-            phone: partner.phone,
-            data: partner,
-            error: 'Duplicate phone number in file (skipped)'
-          });
-        }
-      }
-
-      validPartners.length = 0;
-      validPartners.push(...tempPartners);
-    }
-
-    // Check for existing phone numbers in database and filter them out
-    const existingPartners = await ChannelPartner.find({
-      phone: { $in: validPartners.map(p => p.phone) }
-    }).select('phone name').lean();
-
-    const existingPhones = existingPartners.map(p => p.phone);
-    const skippedExisting = [];
-
-    if (existingPhones.length > 0) {
-      // Filter out existing partners
-      const partnersToInsert = validPartners.filter(partner => {
-        if (existingPhones.includes(partner.phone)) {
-          skippedExisting.push({
-            phone: partner.phone,
-            name: partner.name,
-            error: 'Phone number already exists in database (skipped)'
-          });
-          return false;
-        }
-        return true;
-      });
-
-      validPartners.length = 0;
-      validPartners.push(...partnersToInsert);
-    }
-
-    // Add skipped entries to errors array
-    errors.push(...skippedExisting);
+    // No duplicate checking - insert all valid partners
 
     // Insert valid partners
     let insertedCount = 0;

@@ -40,19 +40,19 @@ const {
 
 /**
  * @route   POST /api/attendance/check-in
- * @desc    User check-in with location
+ * @desc    User check-in with location (supports both file upload and base64)
  * @access  Private (Authenticated Users)
  * @body    { latitude, longitude, address, accuracy, selfie, notes, platform }
  */
-router.post('/check-in', auth, checkIn);
+router.post('/check-in', auth, uploadSelfie, handleUploadError, checkIn);
 
 /**
  * @route   POST /api/attendance/check-out
- * @desc    User check-out with location
+ * @desc    User check-out with location (supports both file upload and base64)
  * @access  Private (Authenticated Users)
  * @body    { latitude, longitude, address, accuracy, selfie, notes }
  */
-router.post('/check-out', auth, checkOut);
+router.post('/check-out', auth, uploadSelfie, handleUploadError, checkOut);
 
 /**
  * @route   GET /api/attendance/status
@@ -135,6 +135,7 @@ router.get('/selfie/:filename', auth, getSelfieImage);
  * @route   GET /api/attendance/admin/live
  * @desc    Get live attendance dashboard - who's checked in, checked out, absent
  * @access  Private (Superadmin only)
+ * @query   date, startDate, endDate
  */
 router.get('/admin/live', superadmin, getLiveAttendanceDashboard);
 
