@@ -892,13 +892,52 @@ exports.getAttendanceStats = async (req, res) => {
 
     if (startDate || endDate) {
       filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) filter.date.$lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        filter.date.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.date.$lte = end;
+      }
     }
 
-    if (userId) filter.user = userId;
+    // Handle userId - it could be ObjectId or name/email
+    if (userId) {
+      // Check if userId is a valid MongoDB ObjectId
+      if (mongoose.Types.ObjectId.isValid(userId) && userId.length === 24) {
+        filter.user = userId;
+      } else {
+        // Try to find user by name, email, or mobile
+        const user = await User.findOne({
+          $or: [
+            { name: userId },
+            { email: userId },
+            { mobile: userId }
+          ]
+        });
+
+        if (!user) {
+          return res.status(404).json({
+            message: 'User not found',
+            hint: 'Please provide a valid user ID, name, email, or mobile number'
+          });
+        }
+
+        filter.user = user._id;
+      }
+    }
 
     const attendance = await Attendance.find(filter);
+
+    // Debug logging
+    console.log('📊 Stats Query Filter:', JSON.stringify(filter, null, 2));
+    console.log('📊 Found attendance records:', attendance.length);
+    if (attendance.length > 0) {
+      console.log('📊 Sample dates:', attendance.slice(0, 3).map(a => a.date));
+    }
 
     const stats = {
       totalRecords: attendance.length,
