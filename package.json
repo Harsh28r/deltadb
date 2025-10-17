@@ -32,6 +32,9 @@
   "author": "DeltaYards Team",
   "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.910.0",
+    "@aws-sdk/lib-storage": "^3.910.0",
+    "@aws-sdk/s3-request-presigner": "^3.910.0",
     "axios": "^1.11.0",
     "bcryptjs": "^2.4.3",
     "claude": "^0.1.1",

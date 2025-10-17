@@ -358,8 +358,11 @@ const getLeads = async (req, res) => {
 
     console.log('getLeads - Found leads:', leads.length);
 
+    // Mask leads based on user permissions
+    const maskedLeads = await Lead.maskLeadsForUser(leads, req.user);
+
     const results = {
-      leads,
+      leads: maskedLeads,
       pagination: {
         currentPage: page,
         totalPages,
@@ -409,7 +412,12 @@ const getLeadById = async (req, res) => {
       .populate('user', 'name email')
       .lean();
 
-    res.json({ lead, activities });
+    // Mask lead based on user permissions
+    const canViewContact = await req.user.hasPermission('view_full_contact') || req.user.role === 'superadmin';
+    const { maskLeadContact } = require('../utils/maskingHelper');
+    const maskedLead = maskLeadContact(lead, canViewContact);
+
+    res.json({ lead: maskedLead, activities });
   } catch (err) {
     console.error('getLeadById - Error:', err.message);
     res.status(500).json({ message: err.message });

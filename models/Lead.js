@@ -315,6 +315,66 @@ leadSchema.methods.createRemindersFromStatusFields = async function (status, for
   }
 };
 
+// Method to check if a user has permission to view full contact details
+leadSchema.methods.canViewFullContact = async function (user) {
+  try {
+    // Superadmin always has access
+    if (user.role === 'superadmin' || user.level === 1) {
+      return true;
+    }
+
+    // Check if user has the specific permission
+    const hasPermission = await user.hasPermission('view_full_contact');
+    return hasPermission;
+  } catch (error) {
+    console.error('Lead canViewFullContact - Error:', error.message);
+    return false;
+  }
+};
+
+// Method to mask contact information based on user permissions
+leadSchema.methods.maskForUser = async function (user) {
+  try {
+    const canView = await this.canViewFullContact(user);
+
+    if (canView) {
+      return this; // Return full data if user has permission
+    }
+
+    // Mask contact information
+    const { maskLeadContact } = require('../utils/maskingHelper');
+    const leadObject = this.toObject ? this.toObject() : this;
+    return maskLeadContact(leadObject, false);
+  } catch (error) {
+    console.error('Lead maskForUser - Error:', error.message);
+    return this; // Return as-is on error to avoid breaking the flow
+  }
+};
+
+// Static method to mask multiple leads
+leadSchema.statics.maskLeadsForUser = async function (leads, user) {
+  try {
+    // Superadmin always has access
+    if (user.role === 'superadmin' || user.level === 1) {
+      return leads;
+    }
+
+    // Check permission once for all leads
+    const hasPermission = await user.hasPermission('view_full_contact');
+
+    if (hasPermission) {
+      return leads; // Return full data if user has permission
+    }
+
+    // Mask all leads
+    const { maskLeads } = require('../utils/maskingHelper');
+    return maskLeads(leads, false);
+  } catch (error) {
+    console.error('Lead maskLeadsForUser - Error:', error.message);
+    return leads; // Return as-is on error
+  }
+};
+
 // Validate edits for final status
 leadSchema.pre('findOneAndUpdate', async function (next) {
   try {
