@@ -210,8 +210,8 @@ CORS_ORIGIN=http://YOUR_FRONTEND_URL,https://realtechmktg.com
 
 # AWS S3 Configuration
 AWS_REGION=eu-north-1
-AWS_ACCESS_KEY_ID=AKIA5WYOBP257QFGHCWL
-AWS_SECRET_ACCESS_KEY=6bzY5mKw+jcF/aGWnaoV7s4tP7Hi0d9cmI9kZLvl
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_S3_BUCKET_NAME=deltayards-crm-file--eun1-az1--x-s3
 AWS_S3_BUCKET_TYPE=express
 
