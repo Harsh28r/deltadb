@@ -14,6 +14,9 @@ package-lock.json
 logs/
 *.log
 
+# Documentation and markdown files
+*.md
+
 # OS files
 .DS_Store
 Thumbs.db
