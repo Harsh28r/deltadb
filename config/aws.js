@@ -9,6 +9,12 @@ const awsConfig = {
   }
 };
 
+// Add S3 Express One Zone support if bucket type is express
+if (process.env.AWS_S3_BUCKET_TYPE === 'express') {
+  // S3 Express requires forcePathStyle to be false (virtual-hosted-style)
+  awsConfig.forcePathStyle = false;
+}
+
 // Create S3 Client
 const s3Client = new S3Client(awsConfig);
 

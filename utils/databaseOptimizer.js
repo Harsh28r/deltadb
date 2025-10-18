@@ -155,8 +155,7 @@ class DatabaseOptimizer {
       const Project = mongoose.model('Project');
 
     const indexes = [
-      // Basic queries
-      { name: 1 }, // Project search
+      // Basic queries - name index already defined in Project model schema
       { owner: 1 }, // Owner's projects
       { 'members': 1 }, // Member projects
       { 'managers': 1 }, // Manager projects
@@ -169,8 +168,8 @@ class DatabaseOptimizer {
       { owner: 1, createdAt: -1 }, // Owner's projects by date
       { location: 1, createdAt: -1 }, // Location projects by date
 
-      // Text search
-      { name: 'text', location: 'text', developBy: 'text' }
+      // Text search - removed 'name' from text index to avoid conflict with regular index
+      { location: 'text', developBy: 'text' }
     ];
 
       await this.createIndexes(Project, indexes, 'Project');
